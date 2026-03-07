@@ -1,0 +1,2059 @@
+import { useState, useEffect, useRef } from “react”;
+
+let audioCtx = null;
+let currentSource = null;
+function getAudioCtx() {
+if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+return audioCtx;
+}
+async function speakGoogle(text, slow = false) {
+const encoded = encodeURIComponent(text);
+const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encoded}&tl=de&ttsspeed=1&client=tw-ob`;
+try {
+// Always resume/create AudioContext inside user gesture handler
+const ctx = getAudioCtx();
+if (ctx.state === “suspended”) await ctx.resume();
+const resp = await fetch(url, { headers: { “Referer”: “https://translate.google.com/” } });
+if (!resp.ok) throw new Error(“fetch failed”);
+const buf = await resp.arrayBuffer();
+const decoded = await ctx.decodeAudioData(buf.slice(0));
+if (currentSource) { try { currentSource.stop(); } catch {} }
+const src = ctx.createBufferSource();
+src.buffer = decoded;
+src.playbackRate.value = slow ? 0.62 : 1.0;
+src.connect(ctx.destination);
+src.start();
+currentSource = src;
+return true;
+} catch { return false; }
+}
+function speakWebSpeech(text, slow = false) {
+if (!window.speechSynthesis) return false;
+window.speechSynthesis.cancel();
+const trySpeak = () => {
+const voices = window.speechSynthesis.getVoices();
+const priority = [
+v => /Anna|Marlene|Vicki|Petra/i.test(v.name) && v.lang.startsWith(“de”),
+v => /Google/i.test(v.name) && v.lang.startsWith(“de”),
+v => /Microsoft/i.test(v.name) && v.lang.startsWith(“de”),
+v => v.lang === “de-DE”, v => v.lang.startsWith(“de”),
+];
+let voice = null;
+for (const p of priority) { voice = voices.find(p); if (voice) break; }
+const chunks = text.length > 100 ? (text.match(/[^,;.!?–]+[,;.!?–]?\s*/g) || [text]) : [text];
+chunks.forEach(chunk => {
+const u = new SpeechSynthesisUtterance(chunk.trim());
+u.lang = “de-DE”; u.rate = slow ? 0.52 : 0.84; u.pitch = 1.05; u.volume = 1;
+if (voice) u.voice = voice;
+window.speechSynthesis.speak(u);
+});
+};
+if (window.speechSynthesis.getVoices().length === 0) window.speechSynthesis.onvoiceschanged = trySpeak;
+else trySpeak();
+return true;
+}
+let useGoogle = true, googleFails = 0;
+async function speak(text, slow = false) {
+if (useGoogle) {
+const ok = await speakGoogle(text, slow);
+if (!ok) { googleFails++; if (googleFails >= 2) useGoogle = false; speakWebSpeech(text, slow); }
+} else speakWebSpeech(text, slow);
+}
+function stopAudio() {
+try { if (currentSource) { currentSource.stop(); currentSource = null; } } catch {}
+if (window.speechSynthesis) window.speechSynthesis.cancel();
+}
+if (typeof window !== “undefined” && window.speechSynthesis) {
+window.speechSynthesis.getVoices();
+window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
+}
+if (typeof document !== “undefined”) {
+const warmUp = () => { const ctx = getAudioCtx(); if (ctx.state === “suspended”) ctx.resume(); };
+document.addEventListener(“touchstart”, warmUp, { once: true, passive: true });
+document.addEventListener(“click”, warmUp, { once: true });
+}
+
+const WEEKS_A1 = [
+{
+id:1, title:“Woche 1”, subtitle:“First Contact”, color:”#FF6B35”, tier:“A1”,
+lessons:[
+{ id:“greetings”, title:“Greetings”, emoji:“👋”, color:”#FF6B35”,
+story:“Day 1 in Berlin. A neighbour smiles at you in the lift. You need greetings, and fast!”,
+grammar:“German greetings change by time of day. ‘Guten’ = good. Add the time: Morgen (morning), Tag (day), Abend (evening). For informal, just say ‘Hallo!’ — it works anytime.”,
+cards:[
+{de:“Hallo!”,en:“Hello!”,example:“Hallo! Ich bin neu hier.”,phonetic:“HAH-loh”,tip:“Works any time of day, very casual”},
+{de:“Guten Morgen!”,en:“Good morning!”,example:“Guten Morgen! Wie hast du geschlafen?”,phonetic:“GOO-ten MOR-gen”,tip:“Use until about noon”},
+{de:“Guten Tag!”,en:“Good day! / Hello!”,example:“Guten Tag, kann ich Ihnen helfen?”,phonetic:“GOO-ten TAHK”,tip:“Polite, works all day — safe with strangers”},
+{de:“Guten Abend!”,en:“Good evening!”,example:“Guten Abend! Willkommen im Restaurant.”,phonetic:“GOO-ten AH-bent”,tip:“Use from around 6pm”},
+{de:“Gute Nacht!”,en:“Good night!”,example:“Gute Nacht! Schlaf gut!”,phonetic:“GOO-teh nakht”,tip:“Goodnight before sleep — not just leaving”},
+{de:“Tschüss!”,en:“Bye! (casual)”,example:“Tschüss! Bis morgen!”,phonetic:“CHÜSS”,tip:“Very common — like ‘see ya’”},
+{de:“Auf Wiedersehen!”,en:“Goodbye! (formal)”,example:“Auf Wiedersehen, Herr Müller!”,phonetic:“owf VEE-der-zayn”,tip:“Literally ‘until we see again’”},
+{de:“Bis bald!”,en:“See you soon!”,example:“Bis bald! Ich freue mich!”,phonetic:“bis balt”,tip:“bald = soon”},
+{de:“Bis morgen! / Bis später!”,en:“See you tomorrow! / See you later!”,example:“Bis morgen um neun Uhr!”,phonetic:“bis MOR-gen / SHPAY-ter”,tip:“bis = until — super useful word”},
+{de:“Wie geht es Ihnen?”,en:“How are you? (formal)”,example:“Guten Tag! Wie geht es Ihnen heute?”,phonetic:“vee gayt es EE-nen”,tip:“Use with strangers, bosses, doctors”},
+{de:“Wie geht’s dir?”,en:“How are you? (informal)”,example:“Hey! Wie geht’s dir so?”,phonetic:“vee gayts deer”,tip:“Contracted — super casual, use with friends”},
+{de:“Danke, gut! Und Ihnen / dir?”,en:“Fine, thanks! And you?”,example:“Wie geht es Ihnen? — Danke, gut! Und Ihnen?”,phonetic:“DAHN-keh goot oont EE-nen/deer”,tip:“Always ask back — very polite”},
+],
+quiz:[
+{q:“It’s 9am. A shop assistant greets you:”,options:[“Guten Abend”,“Guten Morgen”,“Gute Nacht”,“Tschüss”],answer:1},
+{q:“You leave your friend’s house. You say:”,options:[“Guten Abend”,“Auf Wiedersehen”,“Tschüss!”,“Guten Morgen”],answer:2},
+{q:”‘Auf Wiedersehen’ is the ___ form of goodbye:”,options:[“Casual”,“Formal”,“Southern”,“Child”],answer:1},
+{q:“Someone asks ‘Wie geht’s dir?’ — what’s expected?”,options:[“Your name”,“Your nationality”,“How you are + asking back”,“Where you live”],answer:2},
+]
+},
+{ id:“introductions”, title:“Introductions”, emoji:“🙋”, color:”#C77DFF”,
+story:“A language exchange meetup in Mitte. 20 strangers, one goal — say who you are!”,
+grammar:”‘Du’ = informal you (friends/family). ‘Sie’ = formal you (strangers/authority). When meeting someone new, use ‘Sie’ until they invite you to use ‘du’ — this is called ‘duzen’.”,
+cards:[
+{de:“Ich heiße…”,en:“My name is…”,example:“Hallo! Ich heiße Anna. Und du?”,phonetic:“ikh HY-seh”,tip:“Literally ‘I am called’ — most common”},
+{de:“Mein Name ist…”,en:“My name is… (formal)”,example:“Guten Tag. Mein Name ist Doktor Fischer.”,phonetic:“myne NAH-meh ist”,tip:“More formal — use in business”},
+{de:“Wie heißt du?”,en:“What’s your name? (informal)”,example:“Hey! Wie heißt du?”,phonetic:“vee HYst doo”,tip:“Use with peers, children”},
+{de:“Wie heißen Sie?”,en:“What’s your name? (formal)”,example:“Entschuldigung, wie heißen Sie?”,phonetic:“vee HY-sen zee”,tip:“Use with strangers and in formal settings”},
+{de:“Ich komme aus…”,en:“I come from…”,example:“Ich komme aus Australien. Woher kommst du?”,phonetic:“ikh KOM-eh owss”,tip:“Insert your country”},
+{de:“Ich wohne in…”,en:“I live in…”,example:“Ich wohne in Berlin, in Prenzlauer Berg.”,phonetic:“ikh VOH-neh in”,tip:“Wohnen = to reside (not from)”},
+{de:“Ich bin … Jahre alt.”,en:“I am … years old.”,example:“Ich bin vierundzwanzig Jahre alt.”,phonetic:“ikh bin … YAH-reh alt”,tip:“Jahre alt = years old”},
+{de:“Ich bin Student / Studentin.”,en:“I am a student (m/f).”,example:“Ich bin Studentin an der Humboldt-Universität.”,phonetic:“ikh bin shtoo-DENT / shtoo-DEN-tin”,tip:”-in ending = feminine”},
+{de:“Ich arbeite als…”,en:“I work as…”,example:“Ich arbeite als Lehrer. Und du?”,phonetic:“ikh AR-by-teh als”,tip:“als = as (in a role)”},
+{de:“Ich lerne Deutsch.”,en:“I am learning German.”,example:“Ich lerne seit drei Monaten Deutsch.”,phonetic:“ikh LER-neh DOYTSH”,tip:“seit drei Monaten = for three months”},
+{de:“Freut mich!”,en:“Nice to meet you!”,example:“Ich bin Klaus. — Freut mich, Klaus!”,phonetic:“froyt mikh”,tip:“Literally ‘it pleases me’”},
+{de:“Ganz meinerseits!”,en:“Likewise! / My pleasure!”,example:“Freut mich! — Ganz meinerseits!”,phonetic:“gants MY-ner-zyts”,tip:“The perfect reply to ‘Freut mich’”},
+],
+quiz:[
+{q:“Meeting your professor for the first time, you ask:”,options:[“Wie heißt du?”,“Wie heißen Sie?”,“Wer bist du?”,“Hallo du!”],answer:1},
+{q:”‘Ich komme aus’ vs ‘Ich wohne in’ — the difference:”,options:[“No difference”,“komme aus = origin, wohne in = current home”,“wohne in = origin, komme aus = current home”,“Both mean origin”],answer:1},
+{q:“Someone says ‘Freut mich!’ — you reply:”,options:[“Danke!”,“Tschüss!”,“Ganz meinerseits!”,“Wie bitte?”],answer:2},
+{q:”‘Studentin’ (with -in) means:”,options:[“Male student”,“Female student”,“All students”,“Teacher”],answer:1},
+]
+},
+{ id:“numbers_counting”, title:“Numbers & Counting”, emoji:“🔢”, color:”#4ECDC4”,
+story:“At the Berlin Wochenmarkt — prices, bus numbers, weights everywhere. Count like a local!”,
+grammar:“German 13–19 add ‘-zehn’ (ten). Tens pattern: zwanzig, dreißig, vierzig… Compound numbers like 21 are ‘einundzwanzig’ — unit + und + ten, all ONE word. Phone numbers are said in pairs.”,
+cards:[
+{de:“null, eins, zwei, drei”,en:“zero, one, two, three”,example:“Ich brauche drei Brötchen, bitte.”,phonetic:“nool / ynss / tsvy / dry”,tip:“null = zero for phone numbers, IP addresses”},
+{de:“vier, fünf, sechs, sieben”,en:“four, five, six, seven”,example:“Sieben Tage hat die Woche.”,phonetic:“feer / fühnf / zeks / ZEE-ben”,tip:“sieben = 2 syllables: ZEE-ben”},
+{de:“acht, neun, zehn”,en:“eight, nine, ten”,example:“Der Laden öffnet um zehn Uhr.”,phonetic:“akht / noyn / tsehn”,tip:“Clean short sounds — practice them”},
+{de:“elf, zwölf”,en:“eleven, twelve”,example:“Es ist zwölf Uhr — Mittagszeit!”,phonetic:“elf / tsvölf”,tip:“zwölf is irregular — just memorize it”},
+{de:“dreizehn bis neunzehn”,en:“thirteen to nineteen”,example:“Sie ist neunzehn Jahre alt.”,phonetic:“DRY-tsehn … NOYN-tsehn”,tip:“All end in -zehn (= ten) — easy pattern!”},
+{de:“zwanzig, dreißig, vierzig”,en:“20, 30, 40”,example:“Das kostet dreißig Euro.”,phonetic:“TSVAN-tsikh / DRY-sikh / FEER-tsikh”,tip:“dreißig has ß = double-s sound”},
+{de:“fünfzig, sechzig, siebzig”,en:“50, 60, 70”,example:“Er ist fünfzig Jahre alt.”,phonetic:“FÜHNF-tsikh / ZEKH-tsikh / ZEEP-tsikh”,tip:“Pattern: number + -zig”},
+{de:“achtzig, neunzig, hundert”,en:“80, 90, 100”,example:“Neunzig Kilometer pro Stunde.”,phonetic:“AKHT-tsikh / NOYN-tsikh / HOON-dert”,tip:“hundert = 100 (not ‘einhundert’ in speech)”},
+{de:“einundzwanzig, zweiunddreißig”,en:“21, 32 — compound numbers”,example:“Ich bin einundzwanzig Jahre alt.”,phonetic:“YNE-oont-tsvan-tsikh”,tip:“Unit + und + ten = one long word!”},
+{de:“tausend, zehntausend, hunderttausend”,en:“1,000 / 10,000 / 100,000”,example:“Das kostet zweitausend Euro.”,phonetic:“TOW-zent / TSEHN-tow-zent / HOON-dert-tow-zent”,tip:“German uses period for thousands: 1.000”},
+{de:“erste, zweite, dritte, vierte”,en:“first, second, third, fourth”,example:“Die zweite Straße links, bitte.”,phonetic:“ER-steh / TSVY-teh / DRIT-teh / FEER-teh”,tip:“Ordinals: add -(s)te to most numbers”},
+{de:“Wie viel? / Wie viele?”,en:“How much? / How many?”,example:“Wie viel kostet das? Wie viele Äpfel?”,phonetic:“vee feel / vee FEE-leh”,tip:“viel = uncountable, viele = countable”},
+],
+quiz:[
+{q:“The bus number is ‘sechzehn’. What number?”,options:[“6”,“13”,“16”,“60”],answer:2},
+{q:”‘dreißig’ is:”,options:[“13”,“23”,“30”,“33”],answer:2},
+{q:“How is 21 said in German?”,options:[“Zwanzigein”,“Einzwanzig”,“Einundzwanzig”,“Einzwanzigste”],answer:2},
+{q:“German thousands separator uses:”,options:[“Comma: 1,000”,“Period: 1.000”,“Space: 1 000”,“Nothing: 1000”],answer:1},
+]
+},
+],
+testQuestions:[
+{q:“Which greeting suits a formal setting at 9am?”,options:[“Tschüss!”,“Guten Morgen!”,“Gute Nacht!”,“Hallo du!”],answer:1},
+{q:”‘Wie heißen Sie?’ is the ___ way to ask someone’s name:”,options:[“Casual”,“Formal”,“Childlike”,“Rude”],answer:1},
+{q:“How much is ‘dreißig Euro’?”,options:[“€13”,“€20”,“€30”,“€300”],answer:2},
+{q:”‘Freut mich!’ — what’s the ideal reply?”,options:[“Hallo!”,“Tschüss!”,“Ganz meinerseits!”,“Danke sehr!”],answer:2},
+{q:“What does ‘Ich wohne in Berlin’ mean?”,options:[“I come from Berlin”,“I live in Berlin”,“I work in Berlin”,“I visited Berlin”],answer:1},
+{q:”‘Auf Wiedersehen’ literally means:”,options:[“Good night”,“Until we see again”,“See you soon”,“Goodbye forever”],answer:1},
+{q:“Which is ‘neunzehn’?”,options:[“9”,“19”,“90”,“91”],answer:1},
+{q:”‘Bis bald!’ means:”,options:[“Good morning”,“See you soon”,“Good night”,“How are you?”],answer:1},
+{q:“Compound number — how do you say 24?”,options:[“Zwanzigvier”,“Vierundvierzig”,“Vierundzwanzig”,“Zweiundvier”],answer:2},
+{q:“What does ‘-in’ suffix on a job title indicate?”,options:[“Plural”,“Past tense”,“Feminine form”,“Polite form”],answer:2},
+]
+},
+{
+id:2, title:“Woche 2”, subtitle:“Daily Life”, color:”#FFD93D”, tier:“A1”,
+lessons:[
+{ id:“food_eating”, title:“Food & Eating Out”, emoji:“🍽️”, color:”#FFD93D”,
+story:“You’re at a cozy Café in Prenzlauer Berg. The waiter appears. Your stomach growls. Time to order!”,
+grammar:“Polite ordering uses ‘Ich möchte…’ (I would like). This is the Konjunktiv II form of mögen — it’s softer than ‘Ich will’ (I want). Always add ‘bitte’ (please) at the end.”,
+cards:[
+{de:“Ich möchte… bitte.”,en:“I would like… please.”,example:“Ich möchte einen Kaffee und ein Wasser, bitte.”,phonetic:“ikh MÖSH-teh … BIT-teh”,tip:“möchte = softer/politer than ‘will’”},
+{de:“Was darf es sein?”,en:“What can I get you?”,example:“Was darf es sein? — Einen Tee, bitte!”,phonetic:“vas darf es zyne”,tip:“The waiter’s opener — be ready!”},
+{de:“Die Speisekarte, bitte.”,en:“The menu, please.”,example:“Entschuldigung, die Speisekarte, bitte!”,phonetic:“dee SHPY-zeh-kar-teh BIT-teh”,tip:“Karte = card/map — Speise = food”},
+{de:“der Kaffee / der Tee / das Wasser”,en:“coffee / tea / water”,example:“Ich trinke gerne Kaffee mit Milch.”,phonetic:“kah-FAY / tay / VAS-er”,tip:“Milch = milk, Zucker = sugar, ohne = without”},
+{de:“das Brot / die Butter / der Käse”,en:“bread / butter / cheese”,example:“Brot mit Butter und Käse — typisch deutsch!”,phonetic:“broht / BOO-ter / KAY-zeh”,tip:“Germany has over 300 bread varieties!”},
+{de:“die Wurst / das Schnitzel / der Salat”,en:“sausage / schnitzel / salad”,example:“Das Schnitzel mit Salat, bitte.”,phonetic:“voorst / SHNIT-sel / zah-LAHT”,tip:“Schnitzel = breaded, flattened meat”},
+{de:“lecker / köstlich / nicht so gut”,en:“tasty / delicious / not so great”,example:“Das Schnitzel ist absolut köstlich!”,phonetic:“LEK-er / KÖST-likh”,tip:“köstlich = stronger than lecker”},
+{de:“Die Rechnung, bitte!”,en:“The bill, please!”,example:“Entschuldigung! Die Rechnung, bitte!”,phonetic:“dee REH-khnoong BIT-teh”,tip:“Zahlen = to pay — also useful!”},
+{de:“Ich bin vegetarisch / vegan.”,en:“I’m vegetarian / vegan.”,example:“Haben Sie vegetarische Gerichte?”,phonetic:“ikh bin veh-geh-TAH-rish / veh-GAHN”,tip:“Gericht = dish, Gerichte = dishes (pl.)”},
+{de:“Ich bin allergisch gegen…”,en:“I’m allergic to…”,example:“Ich bin allergisch gegen Nüsse.”,phonetic:“ikh bin ah-LER-gish GAY-gen”,tip:“Nüsse = nuts, Gluten = gluten”},
+{de:“Prost! / Zum Wohl!”,en:“Cheers! (beer / wine)”,example:“Auf unsere Freundschaft! Prost!”,phonetic:“prohst / tsoom vohl”,tip:“Prost = beer & casual, Zum Wohl = wine & formal”},
+{de:“Das hat mir sehr gut geschmeckt!”,en:“I really enjoyed the food!”,example:“Wunderbares Essen — das hat mir sehr gut geschmeckt!”,phonetic:“das hat meer zayr goot geh-SHMEKT”,tip:“The ultimate compliment to a cook”},
+],
+quiz:[
+{q:“You want to politely order a coffee:”,options:[“Kaffee jetzt!”,“Ich will Kaffee.”,“Ich möchte einen Kaffee, bitte.”,“Gib Kaffee!”],answer:2},
+{q:“The waiter says ‘Was darf es sein?’ — they’re:”,options:[“Saying goodbye”,“Asking what you’d like”,“Asking your name”,“Telling you the price”],answer:1},
+{q:”‘Die Rechnung, bitte!’ means:”,options:[“The menu, please!”,“More water, please!”,“The bill, please!”,“Excuse me!”],answer:2},
+{q:“What does ‘köstlich’ mean?”,options:[“Terrible”,“OK”,“Tasty”,“Delicious (stronger than lecker)”],answer:3},
+]
+},
+{ id:“shopping_colors”, title:“Shopping & Colors”, emoji:“🛍️”, color:”#FF8FAB”,
+story:“You’re at a Flohmarkt (flea market) in Munich. Colorful stalls everywhere. Time to browse!”,
+grammar:“Colors are adjectives. In German, adjectives before a noun must agree with its gender and case. For now, learn the base colors — endings come in Week 5. After ‘ist’ (is), no ending needed: ‘Das Hemd ist blau.’”,
+cards:[
+{de:“rot / dunkelrot / hellrot”,en:“red / dark red / light red”,example:“Haben Sie das in Dunkelrot?”,phonetic:“roht / DOON-kel-roht / HEL-roht”,tip:“dunkel- = dark, hell- = light — works for all colors”},
+{de:“blau / dunkelblau / himmelblau”,en:“blue / dark blue / sky blue”,example:“Das himmelblau steht dir super!”,phonetic:“blow / DOON-kel-blow / HIM-el-blow”,tip:“Himmel = sky”},
+{de:“grün / gelb / orange”,en:“green / yellow / orange”,example:“Das gelbe Kleid ist wunderschön.”,phonetic:“grühn / gelp / oh-RAHN-zheh”,tip:“grün has the tricky ü vowel”},
+{de:“schwarz / weiß / grau”,en:“black / white / grey”,example:“Ich trage meistens Schwarz und Grau.”,phonetic:“shvarts / vys / grow”,tip:“weiß has ß = double-s sound”},
+{de:“braun / beige / lila / rosa”,en:“brown / beige / purple / pink”,example:“Ein lila Schal wäre schön.”,phonetic:“brown / bayzh / LEE-lah / ROH-za”,tip:“lila = purple/lilac, violett = violet”},
+{de:“Ich suche…”,en:“I’m looking for…”,example:“Ich suche eine rote Jacke in Größe M.”,phonetic:“ikh ZOO-kheh”,tip:“Best opener in any shop”},
+{de:“Wie viel kostet das?”,en:“How much does this cost?”,example:“Entschuldigung, wie viel kostet das?”,phonetic:“vee feel KOS-tet das”,tip:“The most essential shopping phrase”},
+{de:“Das ist zu teuer.”,en:“That’s too expensive.”,example:“Hmm, das ist mir ein bisschen zu teuer.”,phonetic:“das ist tsoo TOY-er”,tip:“ein bisschen = a little bit”},
+{de:“Haben Sie etwas Günstigeres?”,en:“Do you have something cheaper?”,example:“Das ist schön, aber günstiger?”,phonetic:“HAH-ben zee ET-vas GÜNS-ti-geh-res”,tip:“günstig = affordable”},
+{de:“Kann ich das anprobieren?”,en:“Can I try this on?”,example:“Kann ich die Hose anprobieren, bitte?”,phonetic:“kan ikh das AN-proh-beer-en”,tip:“Anprobieren = separable verb”},
+{de:“Das passt gut. / Das passt nicht.”,en:“That fits well. / That doesn’t fit.”,example:“Oh, das passt perfekt! Ich nehme es.”,phonetic:“das past goot / das past nikht”,tip:“passen = to fit”},
+{de:“Ich nehme es!”,en:“I’ll take it!”,example:“Das passt super — ich nehme es!”,phonetic:“ikh NAY-meh es”,tip:“The sentence every shopkeeper loves to hear”},
+],
+quiz:[
+{q:”‘Günstig’ means:”,options:[“Expensive”,“Beautiful”,“Affordable / cheap”,“Too big”],answer:2},
+{q:“How do you ask ‘Can I try this on?’”,options:[“Kann ich das kaufen?”,“Kann ich das anprobieren?”,“Kann ich das sehen?”,“Kann ich bezahlen?”],answer:1},
+{q:”‘Das Hemd ist blau’ — why no adjective ending?”,options:[“Blau is irregular”,“It’s after ‘ist’, not before the noun”,“Blue never has endings”,“It’s incorrect”],answer:1},
+{q:”‘himmelblau’ literally means:”,options:[“Dark blue”,“Navy blue”,“Sky blue”,“Ocean blue”],answer:2},
+]
+},
+{ id:“time_days”, title:“Time, Days & Dates”, emoji:“📅”, color:”#A8E6CF”,
+story:“Your German friend wants to make plans. ‘Wann treffen wir uns?’ — nail time and dates!”,
+grammar:“WATCH OUT: ‘halb drei’ = 2:30, NOT 3:30! German uses ‘half TO’ not ‘half past’. Viertel vor vier = 3:45 (quarter TO four), Viertel nach vier = 4:15 (quarter PAST four). This confuses learners — commit it to memory now!”,
+cards:[
+{de:“Montag / Dienstag / Mittwoch”,en:“Monday / Tuesday / Wednesday”,example:“Von Montag bis Mittwoch bin ich im Büro.”,phonetic:“MOHN-tahk / DEENS-tahk / MIT-vokh”,tip:“Mittwoch = Mitte+Woche = mid-week!”},
+{de:“Donnerstag / Freitag”,en:“Thursday / Friday”,example:“Freitag Abend — Feierabend!”,phonetic:“DON-ers-tahk / FRY-tahk”,tip:“Donner = thunder (Norse god Thor/Donar)”},
+{de:“Samstag / Sonntag”,en:“Saturday / Sunday”,example:“Am Sonntag schläft man lange.”,phonetic:“ZAHMS-tahk / ZON-tahk”,tip:“Sonntag = Sun-day — logical!”},
+{de:“heute / morgen / gestern”,en:“today / tomorrow / yesterday”,example:“Gestern war Montag, heute Dienstag.”,phonetic:“HOY-teh / MOR-gen / GES-tern”,tip:“The 3 time anchors — learn cold”},
+{de:“übermorgen / vorgestern”,en:“day after tomorrow / day before yesterday”,example:“Ich bin übermorgen wieder zurück.”,phonetic:“ÜH-ber-mor-gen / FOR-ges-tern”,tip:“German has single words for these — great!”},
+{de:“Wie spät ist es?”,en:“What time is it?”,example:“Entschuldigung, wie spät ist es?”,phonetic:“vee shpayt ist es”,tip:“spät = late — literally ‘how late is it?’”},
+{de:“Es ist drei Uhr. / 15 Uhr.”,en:“It’s 3 o’clock. / It’s 3pm (15:00).”,example:“Der Zug fährt um 14 Uhr ab.”,phonetic:“es ist dry oor / fühnf-tsehn oor”,tip:“Formal schedules use 24-hour clock”},
+{de:“halb drei = 2:30!”,en:“half three = 2:30 (NOT 3:30!)”,example:“Treffen wir uns um halb drei?”,phonetic:“halp dry”,tip:“TRAP: halb drei = half TO three = 2:30”},
+{de:“Viertel vor vier = 3:45”,en:“quarter to four = 3:45”,example:“Es ist Viertel vor vier.”,phonetic:“FEER-tel for feer”,tip:“vor = before/to, nach = past/after”},
+{de:“Viertel nach zwei = 2:15”,en:“quarter past two = 2:15”,example:“Der Kurs beginnt Viertel nach neun.”,phonetic:“FEER-tel nakh tsvy”,tip:“nach = past/after”},
+{de:“Januar bis Juni”,en:“January to June”,example:“Mein Geburtstag ist im März.”,phonetic:“yah-NOO-ar / fay-BROO-ar / merts … YOO-nee”,tip:“im + month = ‘in’ that month”},
+{de:“Juli bis Dezember”,en:“July to December”,example:“Das Oktoberfest beginnt im September!”,phonetic:“YOO-lee … deh-TSEM-ber”,tip:“Oktoberfest actually starts in late September!”},
+],
+quiz:[
+{q:”‘Es ist halb drei’ — what time?”,options:[“3:00”,“2:30”,“3:30”,“2:00”],answer:1},
+{q:”‘Viertel vor vier’ = ?”,options:[“4:15”,“3:45”,“4:45”,“3:15”],answer:1},
+{q:“The word ‘übermorgen’ means:”,options:[“Yesterday”,“Tomorrow”,“Day after tomorrow”,“Next week”],answer:2},
+{q:“Oktoberfest begins in:”,options:[“Oktober”,“August”,“September”,“November”],answer:2},
+]
+},
+],
+testQuestions:[
+{q:“Polite way to order coffee:”,options:[“Kaffee!”,“Ich will Kaffee.”,“Ich möchte einen Kaffee, bitte.”,“Kaffee, danke.”],answer:2},
+{q:“Which color is ‘gelb’?”,options:[“Red”,“Blue”,“Green”,“Yellow”],answer:3},
+{q:”‘Es ist halb vier’ means:”,options:[“4:00”,“3:30”,“4:30”,“3:45”],answer:1},
+{q:”‘Die Rechnung, bitte!’ =”,options:[“The menu, please”,“Another drink”,“The bill, please”,“Excuse me”],answer:2},
+{q:”‘Prost!’ is said when:”,options:[“Saying goodbye”,“Toasting / cheers”,“Ordering food”,“Paying”],answer:1},
+{q:”‘Wie viel kostet das?’ =”,options:[“Where is this?”,“How much does this cost?”,“What color is this?”,“Can I try this on?”],answer:1},
+{q:”‘morgen’ means:”,options:[“Yesterday”,“Today”,“Tomorrow”,“Next week”],answer:2},
+{q:”‘Günstig’ means:”,options:[“Expensive”,“Beautiful”,“Cheap/affordable”,“Large”],answer:2},
+{q:“Mittwoch literally means:”,options:[“Wednesday”,“Mid-week”,“Meeting day”,“Work day”],answer:1},
+{q:”‘Das passt gut’ means:”,options:[“That is beautiful”,“That fits well”,“That is expensive”,“That is mine”],answer:1},
+]
+},
+{
+id:3, title:“Woche 3”, subtitle:“Out & About”, color:”#74B9FF”, tier:“A1”,
+lessons:[
+{ id:“directions”, title:“Getting Around”, emoji:“🗺️”, color:”#74B9FF”,
+story:“Dead phone battery in Munich. No maps. Just you, a confused expression, and brave German pedestrians.”,
+grammar:“Use ‘Sie’ (formal) when asking strangers for directions. Key verbs: nehmen (to take), abbiegen (to turn), gehen (to go), fahren (to drive/ride). Separable verb: ab|biegen — the prefix ‘ab’ goes to the end: ‘biegen Sie links ab’.”,
+cards:[
+{de:“Entschuldigung, können Sie mir helfen?”,en:“Excuse me, can you help me?”,example:“Entschuldigung! Können Sie mir helfen?”,phonetic:“KÖN-en zee meer HEL-fen”,tip:“The perfect polite opener”},
+{de:“Wo ist…? / Wie komme ich zu…?”,en:“Where is…? / How do I get to…?”,example:“Wie komme ich zum Marienplatz?”,phonetic:“voh ist / vee KOM-eh ikh tsoo”,tip:“zum = zu dem (to the, masc/neut)”},
+{de:“links / rechts / geradeaus”,en:“left / right / straight ahead”,example:“Gehen Sie links, dann geradeaus.”,phonetic:“links / rekhts / geh-RAH-deh-ows”,tip:“The navigation holy trinity — learn first”},
+{de:“die erste / zweite / dritte Straße”,en:“the first / second / third street”,example:“Nehmen Sie die zweite Straße rechts.”,phonetic:“ER-steh / TSVY-teh / DRIT-teh SHTRAH-seh”,tip:“Straße = street (ß = ss sound)”},
+{de:“an der Ampel / an der Kreuzung”,en:“at the traffic light / at the intersection”,example:“An der Ampel links abbiegen.”,phonetic:“an der AM-pel / KROY-tsoong”,tip:“abbiegen = to turn (separable verb)”},
+{de:“der Bahnhof / der Flughafen / die Haltestelle”,en:“train station / airport / bus stop”,example:“Wie weit ist es bis zum Bahnhof?”,phonetic:“BAHN-hohf / FLOOK-hah-fen / HAL-teh-shtel-leh”,tip:“Bahn = train, Flug = flight, Halt = stop”},
+{de:“die U-Bahn / die S-Bahn / der Bus / die Tram”,en:“metro / suburban rail / bus / tram”,example:“Nehmen Sie die U3 bis Marienplatz.”,phonetic:“oo-bahn / es-bahn / boos / tram”,tip:“U = underground, S = Schnell (fast/surface)”},
+{de:“zu Fuß / mit dem Taxi / mit der U-Bahn”,en:“on foot / by taxi / by metro”,example:“Es ist nur fünf Minuten zu Fuß!”,phonetic:“tsoo foos / mit dem TAKS-ee”,tip:“zu Fuß = on foot (literally ‘to foot’)”},
+{de:“Wie weit ist es? / ungefähr…”,en:“How far is it? / approximately…”,example:“Ungefähr zehn Minuten zu Fuß.”,phonetic:“vee vyte ist es / OON-geh-fair”,tip:“ungefähr = approximately”},
+{de:“Ich verstehe das nicht.”,en:“I don’t understand that.”,example:“Es tut mir leid, ich verstehe das nicht.”,phonetic:“ikh fer-SHTAY-eh das nikht”,tip:“Es tut mir leid = I’m sorry”},
+{de:“Können Sie das wiederholen?”,en:“Can you repeat that?”,example:“Können Sie das bitte wiederholen?”,phonetic:“KÖN-en zee das VEE-der-hoh-len”,tip:“langsamer sprechen = speak more slowly”},
+{de:“Können Sie das aufschreiben?”,en:“Can you write that down?”,example:“Ich verstehe nicht gut. Können Sie das aufschreiben?”,phonetic:“KÖN-en zee das OWF-shry-ben”,tip:“Super useful when you can’t catch the words!”},
+],
+quiz:[
+{q:“You need the airport. You ask:”,options:[“Wo ist der Bahnhof?”,“Wo ist der Flughafen?”,“Wo ist die Toilette?”,“Wo ist der Bus?”],answer:1},
+{q:”‘Gehen Sie geradeaus’ means:”,options:[“Turn left”,“Turn right”,“Go straight ahead”,“Go back”],answer:2},
+{q:“Separable verb ‘abbiegen’ — ‘turn right’ is:”,options:[“Abbiegen Sie rechts”,“Biegen Sie rechts ab”,“Sie rechts abbiegen”,“Biegen ab Sie rechts”],answer:1},
+{q:”‘Können Sie das aufschreiben?’ means:”,options:[“Can you speak slower?”,“Can you repeat that?”,“Can you write that down?”,“Can you help me?”],answer:2},
+]
+},
+{ id:“verbs_core”, title:“Essential Verbs”, emoji:“⚡”, color:”#FFEAA7”,
+story:“Verbs are the engine of every sentence. Nail these 12 and you can express almost anything basic!”,
+grammar:“German verbs conjugate for person. Most follow patterns, but sein (to be) and haben (to have) are irregular — memorize them! Strong verbs change their vowel in the du/er form: fahren → du fährst, essen → du isst.”,
+cards:[
+{de:“sein: ich bin / du bist / er ist / wir sind”,en:“to be: I am / you are / he is / we are”,example:“Ich bin müde. Du bist lustig. Wir sind hier.”,phonetic:“zyne / bin / bist / ist / zint”,tip:“Most irregular verb in German — memorize!”},
+{de:“haben: ich habe / du hast / er hat”,en:“to have: I have / you have / he has”,example:“Ich habe Hunger. Hast du Zeit?”,phonetic:“HAH-ben / HAH-beh / hast / hat”,tip:“Hunger haben = to be hungry (have hunger)”},
+{de:“gehen: ich gehe / du gehst / er geht”,en:“to go: I go / you go / he goes”,example:“Ich gehe nach Hause. Wohin gehst du?”,phonetic:“GAY-en / GAY-eh / gayst / gayt”,tip:“Wohin = where to (direction)”},
+{de:“kommen: ich komme / du kommst”,en:“to come: I come / you come”,example:“Woher kommst du? Ich komme aus Spanien.”,phonetic:“KOM-men / KOM-eh / komst”,tip:“Woher = where from”},
+{de:“machen: ich mache / du machst / er macht”,en:“to do/make”,example:“Was machst du heute? — Ich mache Sport.”,phonetic:“MAH-khen / MAH-kheh / makhst”,tip:“Sport machen = to exercise”},
+{de:“essen: ich esse / du isst / er isst”,en:“to eat”,example:“Was isst du gerne? Ich esse gerne Pizza.”,phonetic:“ES-en / ES-eh / ist”,tip:“Vowel change: e→i in du/er forms!”},
+{de:“trinken: ich trinke / du trinkst”,en:“to drink”,example:“Ich trinke täglich Kaffee.”,phonetic:“TRIN-ken / TRIN-keh / trinkst”,tip:“täglich = daily”},
+{de:“schlafen: ich schlafe / du schläfst”,en:“to sleep”,example:“Ich schlafe gut. Wie lange schläfst du?”,phonetic:“SHLAH-fen / shlayfst / shlayt”,tip:“Vowel change: a→ä in du/er forms”},
+{de:“sprechen: ich spreche / du sprichst”,en:“to speak”,example:“Sprichst du Deutsch? — Ein bisschen!”,phonetic:“SHPREH-khen / shprikhst / shprikht”,tip:“Vowel change: e→i in du/er forms”},
+{de:“fahren: ich fahre / du fährst / er fährt”,en:“to drive / travel (by vehicle)”,example:“Ich fahre mit dem Bus zur Arbeit.”,phonetic:“FAH-ren / fehrst / feyrt”,tip:“Vowel change: a→ä in du/er forms”},
+{de:“wohnen: ich wohne / du wohnst”,en:“to live/reside”,example:“Wo wohnst du? — Ich wohne in Hamburg.”,phonetic:“VOH-nen / VOH-neh / vohnst”,tip:“Regular verb — very predictable!”},
+{de:“möchten: ich möchte / du möchtest”,en:“would like (polite want)”,example:“Ich möchte tanzen. Was möchtest du machen?”,phonetic:“MÖSH-ten / MÖSH-teh / MÖSH-test”,tip:“Softer than wollen — use in requests”},
+],
+quiz:[
+{q:“Conjugate ‘sein’ — ‘we are’ is:”,options:[“wir sein”,“wir haben”,“wir sind”,“wir bist”],answer:2},
+{q:”‘Ich habe Hunger’ literally means:”,options:[“I am hungry”,“I have hunger”,“I want food”,“I eat now”],answer:1},
+{q:“Strong verb ‘essen’ — du form is:”,options:[“du essest”,“du essen”,“du isst”,“du esst”],answer:2},
+{q:”‘fahren’ vowel changes in du/er to:”,options:[“ü”,“ö”,“ä”,“No change”],answer:2},
+]
+},
+{ id:“family”, title:“Family & Relationships”, emoji:“👨‍👩‍👧”, color:”#FD79A8”,
+story:“Your German host family shows photo albums. ‘Und wer ist das?’ — who is everyone?”,
+grammar:“Possessive adjectives: mein (my-masc), meine (my-fem), mein (my-neut). They follow the ‘ein’ pattern. ‘mein Vater, meine Mutter, mein Kind’. Learn the article with each family word!”,
+cards:[
+{de:“die Mutter / der Vater”,en:“mother / father”,example:“Meine Mutter heißt Ingrid.”,phonetic:“MOO-ter / FAH-ter”,tip:“Mutter→Mütter (plural with umlaut)”},
+{de:“die Eltern (Plural!)”,en:“parents (always plural!)”,example:“Meine Eltern wohnen in Stuttgart.”,phonetic:“EL-tern”,tip:“No singular — always die Eltern”},
+{de:“der Bruder / die Schwester”,en:“brother / sister”,example:“Ich habe einen Bruder und zwei Schwestern.”,phonetic:“BROO-der / SHVES-ter”,tip:“Geschwister = siblings (both together)”},
+{de:“der Sohn / die Tochter”,en:“son / daughter”,example:“Ihr Sohn ist Arzt. Ihre Tochter studiert.”,phonetic:“zohn / TOKH-ter”,tip:“Kinder = children (plural of Kind)”},
+{de:“der Großvater / die Großmutter”,en:“grandfather / grandmother”,example:“Mein Großvater ist 82 Jahre alt.”,phonetic:“GROHS-fah-ter / GROHS-moo-ter”,tip:“groß = big — Urgroßvater = great-grandfather”},
+{de:“der Opa / die Oma”,en:“grandpa / grandma (informal)”,example:“Oma backt immer den besten Kuchen!”,phonetic:“OH-pah / OH-mah”,tip:“Far more common than Großvater/mutter”},
+{de:“der Onkel / die Tante”,en:“uncle / aunt”,example:“Mein Onkel Klaus ist sehr lustig.”,phonetic:“ON-kel / TAN-teh”,tip:“Nichte = niece, Neffe = nephew”},
+{de:“der Mann / die Frau”,en:“husband / wife (also: man / woman)”,example:“Das ist mein Mann Klaus.”,phonetic:“man / frow”,tip:“Context: mein Mann = my husband”},
+{de:“der Freund / die Freundin”,en:“boyfriend/friend / girlfriend/friend”,example:“Das ist mein Freund Klaus. (friend or boyfriend!)”,phonetic:“froynt / FROYN-din”,tip:“Context: ‘mein Freund’ = boyfriend”},
+{de:“das Kind / die Kinder”,en:“child / children”,example:“Sie haben drei Kinder.”,phonetic:“kint / KIN-der”,tip:“Kindergarten = children’s garden — you know this word!”},
+{de:“Hast du Geschwister?”,en:“Do you have siblings?”,example:“Ja, ich habe zwei Schwestern.”,phonetic:“hast doo geh-SHVIS-ter”,tip:“Geschwister = siblings (no English parallel)”},
+{de:“eine große / kleine Familie”,en:“a big / small family”,example:“Wir sind eine große Familie — sieben Personen!”,phonetic:“EYE-neh GROH-seh / KLY-neh fah-MEE-lee-eh”,tip:“groß = big, klein = small”},
+],
+quiz:[
+{q:”‘Eltern’ is always:”,options:[“Singular”,“Plural”,“Either”,“Formal only”],answer:1},
+{q:”‘Geschwister’ means:”,options:[“Brothers only”,“Sisters only”,“Siblings (brothers and sisters)”,“Parents”],answer:2},
+{q:”‘Mein Freund’ can mean both:”,options:[“My teacher / my boss”,“My friend / my boyfriend”,“My uncle / my cousin”,“My father / my brother”],answer:1},
+{q:“What is ‘die Tochter’?”,options:[“Mother”,“Grandmother”,“Sister”,“Daughter”],answer:3},
+]
+},
+],
+testQuestions:[
+{q:“How do you ask ‘Where is the metro?’”,options:[“Wo ist der Bus?”,“Wo ist die U-Bahn?”,“Wo ist der Zug?”,“Wo ist das Taxi?”],answer:1},
+{q:”‘Ich bin müde’ uses which verb?”,options:[“haben”,“machen”,“sein”,“gehen”],answer:2},
+{q:”‘Zu Fuß’ means:”,options:[“By bus”,“By car”,“On foot”,“By train”],answer:2},
+{q:“Strong verb ‘essen’ — du form:”,options:[“du essest”,“du essen”,“du isst”,“du esst”],answer:2},
+{q:“What is ‘die Schwester’?”,options:[“Mother”,“Daughter”,“Sister”,“Grandmother”],answer:2},
+{q:”‘Können Sie das wiederholen?’ =”,options:[“Can you speak slower?”,“Can you help me?”,“Can you repeat that?”,“Can you come here?”],answer:2},
+{q:”‘Eltern’ means:”,options:[“Children”,“Parents”,“Grandparents”,“Siblings”],answer:1},
+{q:“Your grandpa informal is:”,options:[“Großvater”,“Vater”,“Opa”,“Onkel”],answer:2},
+{q:“Separable verb ‘abbiegen’ — ‘turn left’ is:”,options:[“Abbiegen links”,“Biegen Sie links ab”,“Links abbiegen”,“Biegen ab links”],answer:1},
+{q:”‘Hast du Geschwister?’ =”,options:[“Do you have money?”,“Do you have time?”,“Do you have siblings?”,“Do you have food?”],answer:2},
+]
+},
+{
+id:4, title:“Woche 4”, subtitle:“Everyday Situations”, color:”#A29BFE”, tier:“A1”,
+lessons:[
+{ id:“body_health”, title:“Body, Health & Feelings”, emoji:“🩺”, color:”#A29BFE”,
+story:“You’ve moved into a Berlin WG. First a cold, then a visit to the doctor. Learn to describe how you feel!”,
+grammar:“Body parts: ‘tut weh’ = hurts (tun + weh). Ich habe + body part + -schmerzen = I have pain: ‘Kopfschmerzen’ (headache). Feeling verbs are reflexive: ‘Ich fühle mich krank’ — fühle + mich (myself).”,
+cards:[
+{de:“der Kopf / das Gesicht / der Hals”,en:“head / face / throat”,example:“Ich habe Kopfschmerzen und Halsschmerzen.”,phonetic:“kopf / geh-ZIKHT / hals”,tip:“Kopfschmerzen = headache, Halsschmerzen = sore throat”},
+{de:“der Arm / die Hand / die Finger”,en:“arm / hand / fingers”,example:“Ich habe mir den Finger verletzt.”,phonetic:“arm / hant / FING-er”,tip:“verletzt = injured”},
+{de:“das Bein / der Fuß / der Rücken / der Bauch”,en:“leg / foot / back / stomach”,example:“Mein Rücken tut weh. Hast du ein Schmerzmittel?”,phonetic:“byne / foos / RÜH-ken / bowkh”,tip:“Rückenschmerzen = backache, Bauchschmerzen = stomachache”},
+{de:“Ich bin krank. / Ich bin gesund.”,en:“I am sick. / I am healthy.”,example:“Ich kann nicht kommen, ich bin krank.”,phonetic:“ikh bin krank / geh-ZOONT”,tip:“gesund = healthy — your goal after being krank!”},
+{de:“Ich fühle mich nicht gut.”,en:“I don’t feel well.”,example:“Ich fühle mich heute gar nicht gut.”,phonetic:“ikh FÜH-leh mikh nikht goot”,tip:“fühlen = to feel (always reflexive here)”},
+{de:“Ich habe Fieber / Husten / Schnupfen”,en:“I have a fever / cough / runny nose”,example:“Ich habe Fieber — 38,5 Grad!”,phonetic:“FEE-ber / HOOS-ten / SHNOOP-fen”,tip:“German decimals use comma: 38,5°C”},
+{de:“müde / erschöpft / fit / energiegeladen”,en:“tired / exhausted / fit / full of energy”,example:“Nach der langen Reise bin ich erschöpft.”,phonetic:“MÜH-deh / er-SHÖPFT / fit / en-er-GEE-geh-lah-den”,tip:“erschöpft = thoroughly exhausted (stronger)”},
+{de:“glücklich / traurig / wütend / aufgeregt”,en:“happy / sad / angry / excited”,example:“Ich bin so aufgeregt — morgen fliege ich!”,phonetic:“GLÜK-likh / TROW-rikh / VÜH-tent / OWF-geh-regt”,tip:“Wie fühlst du dich? = How do you feel?”},
+{de:“die Apotheke / der Arzt / das Krankenhaus”,en:“pharmacy / doctor / hospital”,example:“Wo ist die nächste Apotheke?”,phonetic:“ah-poh-TAY-keh / artst / KRAN-ken-hows”,tip:“Krankenhaus = sick-house — perfect logic!”},
+{de:“Ich brauche ein Schmerzmittel.”,en:“I need a painkiller.”,example:“Haben Sie Schmerzmittel? Mein Kopf tut weh.”,phonetic:“ikh BROW-kheh yne SHMERTZ-mit-tel”,tip:“Schmerz = pain, Mittel = remedy/means”},
+{de:“Notruf: 112! / Rufen Sie einen Krankenwagen!”,en:“Emergency: 112! / Call an ambulance!”,example:“Notfall! Rufen Sie sofort einen Krankenwagen!”,phonetic:“NOHT-roof / KRAN-ken-vah-gen”,tip:“112 works across all EU countries!”},
+{de:“Ich bin allergisch gegen… / Ich vertrage… nicht.”,en:“I’m allergic to… / I can’t tolerate…”,example:“Ich vertrage keinen Alkohol.”,phonetic:“ah-LER-gish GAY-gen / fer-TRAH-geh … nikht”,tip:“vertragen = to tolerate (for food sensitivities)”},
+],
+quiz:[
+{q:“You have a headache. You say:”,options:[“Ich habe Fieber”,“Ich habe Husten”,“Ich habe Kopfschmerzen”,“Mir ist schlecht”],answer:2},
+{q:“Where do you get medicine in Germany?”,options:[“Der Markt”,“Die Apotheke”,“Der Arzt”,“Das Supermarkt”],answer:1},
+{q:“The EU emergency number is:”,options:[“999”,“911”,“110”,“112”],answer:3},
+{q:”‘Ich fühle mich nicht gut’ — why ‘mich’?”,options:[“It’s accusative object”,“fühlen is a reflexive verb”,“German always needs mich”,“It’s dative”],answer:1},
+]
+},
+{ id:“weather_nature”, title:“Weather & Seasons”, emoji:“🌤️”, color:”#55EFC4”,
+story:“Germans are obsessed with weather talk — it’s the national small talk. Master this and you’ll fit right in!”,
+grammar:“Weather phrases use ‘Es ist’ (it is) + adjective, OR ‘Es gibt’ (there is) + noun. Temperatures in Germany are always Celsius — 20°C is a lovely summer day. 0°C = freezing.”,
+cards:[
+{de:“Wie ist das Wetter heute?”,en:“What’s the weather like today?”,example:“Wie ist das Wetter heute? — Sonnig und warm!”,phonetic:“vee ist das VET-er HOY-teh”,tip:“bei euch = where you are (in conversation)”},
+{de:“Es ist sonnig. / Es ist bewölkt. / Es ist bedeckt.”,en:“It’s sunny. / cloudy. / overcast.”,example:“Es ist leider sehr bewölkt heute.”,phonetic:“ZON-ikh / beh-VÖLKT / beh-DEKT”,tip:“leider = unfortunately — Germans use it often!”},
+{de:“Es regnet. / Es schneit. / Es hagelt.”,en:“It’s raining. / snowing. / hailing.”,example:“Es regnet! Hast du einen Regenschirm?”,phonetic:“es RAYG-net / shnayt / HAH-gelt”,tip:“Regenschirm = umbrella (Regen = rain, Schirm = screen/shield)”},
+{de:“Es ist windig. / stürmisch. / neblig.”,en:“It’s windy. / stormy. / foggy.”,example:“Im November ist es oft neblig in Hamburg.”,phonetic:“VIN-dikh / SHTÜR-mish / NAYB-likh”,tip:“Hamburg is famous for its weather!”},
+{de:“warm / heiß / mild / kühl / kalt / eiskalt”,en:“warm / hot / mild / cool / cold / ice cold”,example:“Heute sind es 34 Grad — wirklich heiß!”,phonetic:“varm / hys / milt / kühl / kalt / EYE-skalt”,tip:“wirklich = really, truly”},
+{de:“der Frühling / der Sommer / der Herbst / der Winter”,en:“spring / summer / autumn / winter”,example:“Im Herbst sind die Wälder wunderschön.”,phonetic:“FRÜH-ling / ZOM-er / herpst / VIN-ter”,tip:“Wälder = forests (Wald → Wälder with umlaut)”},
+{de:“das Gewitter / der Sturm / der Blitz”,en:“thunderstorm / storm / lightning”,example:“Heute Abend gibt es ein starkes Gewitter!”,phonetic:“geh-VIT-er / shtorm / blits”,tip:“Donner = thunder, Blitz = lightning”},
+{de:“die Temperatur / … Grad Celsius”,en:“temperature / … degrees Celsius”,example:“Die Temperatur beträgt heute 22 Grad.”,phonetic:“tem-peh-rah-TOOR / grahd TSEL-see-oos”,tip:“0°C = freezing, 37°C = body temperature”},
+{de:“Ich brauche einen Regenschirm / Mantel / Jacke.”,en:“I need an umbrella / coat / jacket.”,example:“Es ist kalt — ich brauche meinen Mantel.”,phonetic:“ikh BROW-kheh EYE-nen RAY-gen-shirm / MAN-tel / YAK-eh”,tip:“meinen = my (accusative, masculine noun)”},
+{de:“Schönes Wetter heute, oder?”,en:“Nice weather today, isn’t it?”,example:“Schönes Wetter! — Ja, endlich Frühling!”,phonetic:“SHÖN-es VET-er HOY-teh OH-der”,tip:“oder? = isn’t it? right? — conversation filler”},
+{de:“Der Wetterbericht sagt morgen Regen.”,en:“The weather forecast says rain tomorrow.”,example:“Laut Wetterbericht schneit es morgen.”,phonetic:“VET-er-beh-rikht zahkt”,tip:“laut = according to”},
+{de:“typisch deutsches Wetter!”,en:“typical German weather!”,example:“Regen im Sommer — na ja, typisch!”,phonetic:“TÜH-pish DOYT-shes VET-er”,tip:“na ja = oh well / well… (very German expression)”},
+],
+quiz:[
+{q:“It’s snowing. You say:”,options:[“Es ist sonnig!”,“Es regnet!”,“Es schneit!”,“Es ist heiß!”],answer:2},
+{q:“A ‘Regenschirm’ is:”,options:[“Raincoat”,“Umbrella”,“Rain boots”,“Rain cloud”],answer:1},
+{q:“Which season is ‘Frühling’?”,options:[“Summer”,“Autumn”,“Winter”,“Spring”],answer:3},
+{q:“20°C in Germany is:”,options:[“Freezing”,“Very cold”,“A pleasant day”,“Dangerously hot”],answer:2},
+]
+},
+{ id:“home_rooms”, title:“Home & Living”, emoji:“🏠”, color:”#FDCB6E”,
+story:“You’ve moved into a Berlin WG (shared flat). Your roommates give you the tour!”,
+grammar:“German compound nouns: multiple words join into one: Schlaf+zimmer = bedroom, Kühl+schrank = fridge, Wasch+maschine = washing machine. The LAST part determines the gender: das Zimmer → das Schlafzimmer.”,
+cards:[
+{de:“die Wohnung / das Haus / die WG”,en:“apartment / house / shared flat”,example:“Ich wohne in einer 2-Zimmer-Wohnung.”,phonetic:“VOH-noong / hows / vay-GAY”,tip:“WG = Wohngemeinschaft = flat-share”},
+{de:“die Küche / das Badezimmer / die Toilette”,en:“kitchen / bathroom / toilet”,example:“Die Küche ist rechts, das Bad ist links.”,phonetic:“KÜH-kheh / BAH-deh-tsim-er / twah-LET-teh”,tip:“das Bad = bathroom (short for Badezimmer)”},
+{de:“das Wohnzimmer / das Schlafzimmer”,en:“living room / bedroom”,example:“Mein Schlafzimmer ist klein aber gemütlich.”,phonetic:“VOHN-tsim-er / SHLAHF-tsim-er”,tip:“gemütlich = cozy — very German concept!”},
+{de:“der Flur / der Balkon / der Keller / der Garten”,en:“hallway / balcony / basement / garden”,example:“Wir haben einen kleinen Balkon.”,phonetic:“floor / bal-KON / KEL-er / GAR-ten”,tip:“Balkon is a French loanword”},
+{de:“das Bett / der Schrank / der Tisch / der Stuhl”,en:“bed / wardrobe / table / chair”,example:“Der Tisch ist zu klein für vier Personen.”,phonetic:“bet / shrank / tish / shtool”,tip:“der Schreibtisch = desk (Schreib = writing)”},
+{de:“der Kühlschrank / die Waschmaschine / der Herd”,en:“fridge / washing machine / stove”,example:“Ist der Kühlschrank leer? Wir müssen einkaufen!”,phonetic:“KÜHL-shrank / VASH-mah-shee-neh / herd”,tip:“leer = empty, einkaufen = to go shopping”},
+{de:“Miete / Nebenkosten / Kaution”,en:“rent / utilities / deposit”,example:“Die Miete beträgt 800 Euro warm.”,phonetic:“MEE-teh / NAY-ben-kos-ten / kow-TSYOHN”,tip:“warm = utilities included, kalt = without utilities”},
+{de:“sauber / dreckig / ordentlich / unordentlich”,en:“clean / dirty / tidy / untidy”,example:“Bitte halte dein Zimmer ordentlich!”,phonetic:“ZOW-ber / DREK-ikh / OR-dent-likh / oon-OR-dent-likh”,tip:“halte = keep (imperative of halten)”},
+{de:“abwaschen / aufräumen / staubsaugen”,en:“to wash up / to tidy up / to vacuum”,example:“Kannst du heute abwaschen? Ich habe aufgeräumt.”,phonetic:“AP-vash-en / OWF-roy-men / SHTOWP-zow-gen”,tip:“All separable verbs — prefix goes to end!”},
+{de:“Darf ich kurz…? / Haben Sie einen…?”,en:“May I quickly…? / Do you have a…?”,example:“Darf ich kurz das Bad benutzen?”,phonetic:“darf ikh koorts / HAH-ben zee EYE-nen”,tip:“darf = may (modal verb dürfen)”},
+{de:“gemütlich / hell / dunkel / geräumig”,en:“cozy / bright / dark / spacious”,example:“Das Zimmer ist hell und sehr gemütlich.”,phonetic:“geh-MÜT-likh / hel / DOON-kel / geh-ROY-mikh”,tip:“gemütlich = untranslatable German coziness!”},
+{de:“Ich suche eine Wohnung / ein WG-Zimmer.”,en:“I’m looking for an apartment / a room in a shared flat.”,example:“Ich suche ein möbliertes Zimmer in Berlin-Mitte.”,phonetic:“ikh ZOO-kheh EYE-neh VOH-noong”,tip:“möbliert = furnished”},
+],
+quiz:[
+{q:“WG stands for:”,options:[“Wohnung Gut”,“Wohngemeinschaft”,“Wohn-Gaststätte”,“Wohn-Gemäuer”],answer:1},
+{q:“The last part of a compound noun determines:”,options:[“The meaning”,“The gender”,“The plural”,“The case”],answer:1},
+{q:”‘sauber’ vs ‘ordentlich’:”,options:[“Both mean clean”,“sauber = clean, ordentlich = tidy”,“ordentlich = clean, sauber = tidy”,“Both mean tidy”],answer:1},
+{q:”‘Die Miete beträgt 800 Euro warm’ — ‘warm’ here means:”,options:[“Heated apartment”,“Warm weather included”,“Utilities included”,“Warm water only”],answer:2},
+]
+},
+],
+testQuestions:[
+{q:“You have a stomachache. You say:”,options:[“Ich habe Kopfschmerzen”,“Ich habe Rückenschmerzen”,“Ich habe Bauchschmerzen”,“Ich habe Halsschmerzen”],answer:2},
+{q:“It’s snowing outside:”,options:[“Es regnet!”,“Es ist heiß!”,“Es schneit!”,“Es ist bewölkt!”],answer:2},
+{q:“WG = ___”,options:[“Wohnung Groß”,“Wohngemeinschaft”,“Wohn-Gut”,“Wohn-Gasse”],answer:1},
+{q:“German emergency number:”,options:[“999”,“911”,“110”,“112”],answer:3},
+{q:“Which season is ‘Herbst’?”,options:[“Spring”,“Summer”,“Autumn”,“Winter”],answer:2},
+{q:”‘Müde’ means:”,options:[“Happy”,“Sad”,“Tired”,“Sick”],answer:2},
+{q:“The last part of a compound noun determines:”,options:[“The meaning”,“The gender”,“The plural form”,“Nothing”],answer:1},
+{q:”‘Es ist bewölkt’ =”,options:[“It is sunny”,“It is raining”,“It is cloudy”,“It is windy”],answer:2},
+{q:”‘die Apotheke’ is:”,options:[“The doctor”,“The hospital”,“The pharmacy”,“The clinic”],answer:2},
+{q:”‘Ich fühle mich nicht gut’ — why ‘mich’?”,options:[“Accusative object”,“fühlen is reflexive”,“Grammar rule”,“Politeness”],answer:1},
+]
+},
+{
+id:5, title:“Woche 5”, subtitle:“Grammar Foundations”, color:”#00B894”, tier:“A1”,
+lessons:[
+{ id:“articles_gender”, title:“Articles & Gender”, emoji:“🧬”, color:”#00B894”,
+story:“You want to say ‘I see the man’ and ‘I buy the book’. German makes you think: which article? This week we crack the code.”,
+grammar:“Every German noun has a gender: der (masc.), die (fem.), das (neuter). Learn the article WITH every noun — it’s part of the word! Key tip: -ung, -heit, -keit = ALWAYS die. -chen, -lein = ALWAYS das. -er (job) = usually der.”,
+cards:[
+{de:“der → masculine (der Mann, der Tisch, der Bahnhof)”,en:“der = masculine (the man, the table, the station)”,example:“Ich sehe den Mann. Der Tisch ist groß.”,phonetic:“der man / der tish / der BAHN-hohf”,tip:“About 1/3 of nouns are masculine”},
+{de:“die → feminine (die Frau, die Stadt, die Wohnung)”,en:“die = feminine (the woman, the city, the apartment)”,example:“Die Stadt ist schön. Die Wohnung ist groß.”,phonetic:“dee frow / dee shtat / dee VOH-noong”,tip:”-ung ALWAYS = die. Remember it!”},
+{de:“das → neuter (das Kind, das Buch, das Zimmer)”,en:“das = neuter (the child, the book, the room)”,example:“Das Kind liest das Buch.”,phonetic:“das kint / das bookh / das TSIM-er”,tip:”-chen and -lein ALWAYS = das”},
+{de:“ein / eine / ein — indefinite article”,en:“a/an — a man / a woman / a child”,example:“Ich habe einen Bruder und eine Schwester.”,phonetic:“yne / EYE-neh / yne”,tip:“Masculine accusative: ein → einen!”},
+{de:“kein / keine / kein — negative article”,en:“no/not a — no man / no woman / no child”,example:“Ich habe keine Zeit. Das ist kein Problem.”,phonetic:“kyne / KY-neh / kyne”,tip:“kein follows the ein-pattern but negates”},
+{de:“Tips for gender: -ung, -heit, -keit → die”,en:“Suffixes that signal feminine (die)”,example:“die Wohnung, die Gesundheit, die Freundlichkeit”,phonetic:“dee VOH-noong / geh-ZOONT-hyte / FROYNT-likh-kyte”,tip:“These THREE suffixes = always die!”},
+{de:“Tips for gender: -chen, -lein → das”,en:“Diminutive suffixes = always neuter (das)”,example:“das Mädchen, das Brötchen, das Fräulein”,phonetic:“das MAYT-khen / BRÖT-khen / FROI-line”,tip:“Das Mädchen (girl) is neuter — German logic!”},
+{de:“Tips for gender: -er (people/jobs) → der”,en:“Job/agent nouns with -er = usually masculine”,example:“der Lehrer, der Fahrer, der Computer”,phonetic:“der LAY-rer / FAH-rer / kom-PYOO-ter”,tip:“Exception: die Mutter (the -er of ‘mother’)”},
+{de:“der Plural: die (for ALL genders)”,en:“Plural article: always ‘die’”,example:“der Mann → die Männer, das Kind → die Kinder”,phonetic:“dee MEN-er / dee KIN-der”,tip:“Plural is ALWAYS ‘die’ — one rule to rule them all!”},
+{de:“Akkusativ Maskulinum: der → den, ein → einen”,en:“Accusative masculine: der→den, ein→einen”,example:“Ich sehe den Mann. Ich kaufe einen Apfel.”,phonetic:“den man / EYE-nen AP-fel”,tip:“ONLY masculine changes in accusative!”},
+{de:“nicht + Verb / kein + Nomen”,en:“not + verb / no + noun — two ways to negate”,example:“Ich trinke nicht. Ich habe kein Geld.”,phonetic:“nikht / kyne GELT”,tip:“nicht negates verbs/adjectives, kein negates nouns”},
+{de:“Was ist das? / Das ist ein/eine…”,en:“What is this? / This is a…”,example:“Was ist das? — Das ist ein Hund.”,phonetic:“vas ist das / das ist yne/EYE-neh”,tip:“Hund = dog — useful word to know!”},
+],
+quiz:[
+{q:”‘Wohnung’ is which gender?”,options:[“Der”,“Die”,“Das”,“Depends”],answer:1},
+{q:”‘Das Mädchen’ (girl) is which gender?”,options:[“Feminine”,“Masculine”,“Neuter”,“Changes”],answer:2},
+{q:“Accusative of ‘ich kaufe ___ Apfel’:”,options:[“der”,“die”,“den”,“dem”],answer:2},
+{q:”‘nicht’ vs ‘kein’ — ‘kein’ negates:”,options:[“Verbs”,“Adjectives”,“Nouns”,“Sentences”],answer:2},
+]
+},
+{ id:“sentence_structure”, title:“Sentence Structure”, emoji:“📐”, color:”#6C5CE7”,
+story:“A German sentence feels like a puzzle — the verb always wants to be second. Once you see the rule, everything clicks!”,
+grammar:“VERB SECOND RULE: In German main clauses, the verb is ALWAYS in position 2, no matter what comes first. ‘Heute gehe ich…’ not ‘Heute ich gehe’. This is called the V2 rule (Verbzweitstellung).”,
+cards:[
+{de:“Das Verb steht immer auf Position 2!”,en:“The verb is ALWAYS in position 2!”,example:“Heute gehe ich in die Stadt. Morgen fahre ich.”,phonetic:“das ferp shtayt IM-er owf po-zee-TSYOHN TSVY”,tip:“Even if time/place comes first, verb is #2”},
+{de:“Ich gehe heute ins Kino.”,en:“I am going to the cinema today.”,example:“Ich gehe heute ins Kino. / Heute gehe ich ins Kino.”,phonetic:“ikh GAY-eh HOY-teh ins KEE-noh”,tip:“Both correct — just swapping the front element”},
+{de:“Fragen: Verb auf Position 1!”,en:“Questions: verb in position 1!”,example:“Gehst du heute ins Kino?”,phonetic:“gayst doo HOY-teh ins KEE-noh”,tip:“Yes/no questions: verb comes FIRST”},
+{de:“W-Fragen: W-Wort + Verb + Subjekt”,en:“W-questions: question word + verb + subject”,example:“Wohin gehst du? Was machst du?”,phonetic:“VOH-hin gayst doo / vas makhst doo”,tip:“W-words: wer, was, wo, wohin, woher, wann, wie”},
+{de:“wer / was / wo / wann / wie / warum”,en:“who / what / where / when / how / why”,example:“Wer bist du? Wo wohnst du? Warum lernst du?”,phonetic:“ver / vas / voh / van / vee / vah-ROOM”,tip:“Master these 6 for any conversation!”},
+{de:“Trennbare Verben: Präfix ans Ende!”,en:“Separable verbs: prefix to the END!”,example:“Ich stehe um 7 auf. (aufstehen = to get up)”,phonetic:“ikh SHTAY-eh oom zeeben OWF”,tip:“aufstehen, anrufen, einladen, aufmachen…”},
+{de:“Modalverben: Modal + Infinitiv am Ende”,en:“Modal verbs: modal + infinitive at the end”,example:“Ich muss heute lernen. Kannst du kommen?”,phonetic:“ikh moos HOY-teh LER-nen”,tip:“6 modals push the infinitive to the last position”},
+{de:“Negation mit ‘nicht’: nach dem Verb”,en:“Negation with ‘nicht’: after the verb”,example:“Ich gehe nicht. Ich bin nicht müde.”,phonetic:“ikh GAY-eh nikht”,tip:”‘nicht’ usually goes at the end or before the targeted word”},
+{de:“Akkusativ-Ergänzung: nach dem Verb”,en:“Accusative object: after the verb”,example:“Ich kaufe einen Apfel. Ich sehe die Frau.”,phonetic:“ikh KOW-feh EYE-nen AP-fel”,tip:“Direct object follows the verb in most cases”},
+{de:“Zeitangaben kommen früh im Satz”,en:“Time expressions come early in the sentence”,example:“Gestern habe ich Pizza gegessen.”,phonetic:“GES-tern HAH-beh ikh PIT-sah geh-ES-en”,tip:“Time words like gestern/heute/morgen love position 1”},
+{de:“Es gibt + Akkusativ”,en:“There is / there are + accusative”,example:“Es gibt einen Park in der Nähe.”,phonetic:“es gibt EYE-nen park in der NAY-eh”,tip:“Es gibt = there is/are (like Spanish hay)”},
+{de:“Und / aber / oder — keine Veränderung!”,en:“And / but / or — no word order change!”,example:“Ich lerne Deutsch und ich übe jeden Tag.”,phonetic:“oont / AH-ber / OH-der”,tip:“These 3 keep normal V2 word order”},
+],
+quiz:[
+{q:”‘Today I go to the cinema’ — German word order:”,options:[“Heute ich gehe ins Kino”,“Heute gehe ich ins Kino”,“Ich heute gehe ins Kino”,“Gehe heute ich ins Kino”],answer:1},
+{q:“Separable verb ‘aufstehen’ — I get up at 7:”,options:[“Ich aufstehe um 7”,“Ich stehe um 7 auf”,“Ich stehe auf um 7”,“Auf stehe ich um 7”],answer:1},
+{q:“Yes/No question word order: verb in position:”,options:[“1”,“2”,“3”,“Last”],answer:0},
+{q:”‘Es gibt’ is used to express:”,options:[“I have”,“There is/are”,“I want”,“I need”],answer:1},
+]
+},
+{ id:“past_present”, title:“Present & Perfect Tense”, emoji:“⏱️”, color:”#FDCB6E”,
+story:“Your German roommate asks ‘Was hast du heute gemacht?’ — time to talk about the past!”,
+grammar:“German spoken past = Perfekt (haben/sein + Partizip II). The Partizip II of WEAK (regular) verbs: ge- + stem + -t (gemacht, gelernt, gespielt). STRONG (irregular) verbs change the stem: gegessen, getrunken, gegangen.”,
+cards:[
+{de:“Perfekt mit haben: Ich habe … gemacht”,en:“Perfect with haben: I did / have done”,example:“Ich habe heute Sport gemacht und Deutsch gelernt.”,phonetic:“ikh HAH-beh … geh-MAKHT”,tip:“Regular weak verbs: ge- + stem + -t”},
+{de:“Perfekt mit sein: Ich bin … gegangen”,en:“Perfect with sein: I went / have gone”,example:“Ich bin ins Kino gegangen und heimgefahren.”,phonetic:“ikh bin … geh-GAN-gen”,tip:“Motion and change verbs use sein!”},
+{de:“gegessen / getrunken / geschlafen (stark)”,en:“ate / drank / slept — irregular participles”,example:“Ich habe Pizza gegessen und Wein getrunken.”,phonetic:“geh-ES-en / geh-TROON-ken / geh-SHLAH-fen”,tip:“Strong verbs: ge- + changed stem + -en”},
+{de:“gearbeitet / gelernt / gespielt / gekauft”,en:“worked / learned / played / bought (weak)”,example:“Hast du heute gearbeitet?”,phonetic:“geh-AR-by-tet / geh-LERNT / geh-SHPEELT”,tip:“Weak verbs: ge- + stem + -t — predictable!”},
+{de:“gefahren / geflogen / gelaufen / geschwommen”,en:“drove / flew / ran / swam (with sein!)”,example:“Ich bin mit dem Rad gefahren.”,phonetic:“geh-FAH-ren / geh-FLOG-en / geh-LOW-fen”,tip:“fahren, fliegen, laufen, schwimmen → all use sein”},
+{de:“Ich war… / Ich hatte… (Präteritum)”,en:“I was / I had (simple past — used in speech!)”,example:“Gestern war das Wetter schön. Ich hatte keine Zeit.”,phonetic:“ikh var / ikh HAT-teh”,tip:“sein and haben use Präteritum even in conversation!”},
+{de:“gestern / letzte Woche / letzten Monat”,en:“yesterday / last week / last month”,example:“Letzte Woche war ich in Wien.”,phonetic:“GES-tern / LETS-teh VOH-kheh / LETS-ten MOH-naht”,tip:“Time words come at the start or after the subject”},
+{de:“Was hast du … gemacht?”,en:“What did you do …?”,example:“Was hast du am Wochenende gemacht?”,phonetic:“vas hast doo … geh-MAKHT”,tip:“am Wochenende = at/on the weekend”},
+{de:“Ich habe nichts Besonderes gemacht.”,en:“I didn’t do anything special.”,example:“Na, wie war dein Tag? — Nichts Besonderes.”,phonetic:“ikh HAH-beh nikhts beh-ZON-deh-res geh-MAKHT”,tip:“Na = well/so — very German conversational filler”},
+{de:“Das war toll / interessant / langweilig.”,en:“That was great / interesting / boring.”,example:“Das Konzert war absolut toll!”,phonetic:“das var tol / in-teh-reh-SANT / LANG-vy-likh”,tip:“interesting = interessant (similar to English!)”},
+{de:“Ich habe … gekauft / bestellt / gegessen.”,en:“I bought / ordered / ate …”,example:“Ich habe einen neuen Laptop gekauft.”,phonetic:“geh-KOWFT / beh-SHTELT / geh-ES-en”,tip:“gekauft = bought, bestellt = ordered”},
+{de:“Wann? Wie oft? Wie lange?”,en:“When? How often? How long?”,example:“Ich war zwei Stunden im Museum.”,phonetic:“van / vee oft / vee LAN-geh”,tip:“Zwei Stunden = two hours, eine Stunde = one hour”},
+],
+quiz:[
+{q:“How do you say ‘I ate pizza’?”,options:[“Ich esse Pizza”,“Ich habe Pizza gegessen”,“Ich bin Pizza gegangen”,“Ich aß Pizza”],answer:1},
+{q:“Which verb takes ‘sein’ in Perfekt?”,options:[“essen”,“trinken”,“kaufen”,“fahren”],answer:3},
+{q:“Weak verb Partizip II: ‘spielen’ →”,options:[“gegangen”,“gespielen”,“gespielt”,“spielte”],answer:2},
+{q:”‘Ich war müde’ — this is:”,options:[“Perfekt”,“Präsens”,“Präteritum of sein”,“Future”],answer:2},
+]
+},
+],
+testQuestions:[
+{q:”’-ung’ suffix always signals which gender?”,options:[“Der”,“Die”,“Das”,“Varies”],answer:1},
+{q:“How do you say ‘I ate pizza’?”,options:[“Ich esse Pizza”,“Ich habe Pizza gegessen”,“Ich bin Pizza gegangen”,“Ich aß Pizza”],answer:1},
+{q:”‘Heute gehe ich…’ — verb is in position:”,options:[“1”,“2”,“3”,“Last”],answer:1},
+{q:“Separable: ‘I get up at 7’ =”,options:[“Ich aufstehe um 7”,“Ich stehe um 7 auf”,“Ich aufstehen um 7”,“Auf ich stehe um 7”],answer:1},
+{q:“Accusative: ‘Ich sehe ___ Mann’”,options:[“der”,“die”,“den”,“dem”],answer:2},
+{q:“Past participle of ‘essen’ (eat):”,options:[“Geesst”,“Gegessen”,“Geessen”,“Essen”],answer:1},
+{q:”‘Es gibt einen Park’ means:”,options:[“I have a park”,“There is a park”,“I want a park”,“He has a park”],answer:1},
+{q:“Yes/No questions: verb in position:”,options:[“1”,“2”,“3”,“Last”],answer:0},
+{q:“Which verbs use ‘sein’ in Perfekt?”,options:[“All verbs”,“Motion & change verbs”,“Irregular verbs”,“Regular verbs”],answer:1},
+{q:”’-chen’ suffix always signals which gender?”,options:[“Der”,“Die”,“Das”,“Varies”],answer:2},
+]
+},
+{
+id:6, title:“Woche 6”, subtitle:“Real German & A1 Mastery”, color:”#FF7675”, tier:“A1”,
+lessons:[
+{ id:“modal_verbs_a1”, title:“Modal Verbs”, emoji:“🎛️”, color:”#FF7675”,
+story:“Modal verbs are everywhere in German. They change the ‘flavour’ of what you’re doing — ability, permission, obligation, desire.”,
+grammar:“6 modal verbs: können (can), müssen (must), dürfen (may), sollen (should), wollen (want), mögen (like). They are irregular — memorize each conjugation! Modal = position 2, infinitive = position LAST.”,
+cards:[
+{de:“können: ich kann / du kannst / er kann”,en:“can/be able to”,example:“Ich kann Deutsch sprechen! Kannst du kochen?”,phonetic:“KÖN-en / ikh kan / doo kanst / er kan”,tip:“Ability AND permission in informal contexts”},
+{de:“müssen: ich muss / du musst / er muss”,en:“must/have to”,example:“Ich muss morgen früh aufstehen.”,phonetic:“MÜS-en / ikh moos / doo moost / er moos”,tip:“NICHT müssen = don’t HAVE to (not forbidden!)”},
+{de:“dürfen: ich darf / du darfst / er darf”,en:“may/be allowed to”,example:“Darf ich hier parken? — Nein, verboten!”,phonetic:“DÜRF-en / ikh darf / doo darfst / er darf”,tip:“NICHT dürfen = must NOT (forbidden!)”},
+{de:“sollen: ich soll / du sollst / er soll”,en:“should/supposed to (external obligation)”,example:“Du sollst jetzt schlafen gehen!”,phonetic:“ZOL-en / ikh zol / doo zolst / er zol”,tip:“Someone ELSE wants you to do it”},
+{de:“wollen: ich will / du willst / er will”,en:“want to (strong intention)”,example:“Ich will Arzt werden! Was willst du werden?”,phonetic:“VOL-en / ikh vil / doo vilst / er vil”,tip:“Strong will — NOT polite. Use möchten instead!”},
+{de:“mögen: ich mag / du magst / er mag”,en:“to like”,example:“Ich mag Schokolade. Magst du Jazz?”,phonetic:“MÖH-gen / ikh mahk / doo mahkst / er mahk”,tip:“Preference/liking — different from wollen”},
+{de:“Modal + Infinitiv ans Ende!”,en:“Modal verb + infinitive to the END!”,example:“Ich muss heute Hausaufgaben machen.”,phonetic:“ikh moos HOY-teh HOWS-owf-gah-ben MAH-khen”,tip:“Hausaufgaben = homework (house + tasks)”},
+{de:“nicht müssen ≠ nicht dürfen”,en:“don’t have to ≠ must not”,example:“Du musst nicht kommen. ≠ Du darfst nicht kommen.”,phonetic:“nikht MÜS-en / nikht DÜRF-en”,tip:“CRITICAL difference — not HAVE to vs FORBIDDEN”},
+{de:“Kann ich…? / Darf ich…?”,en:“Can I…? / May I…?”,example:“Kann ich kurz das Fenster öffnen?”,phonetic:“kan ikh / darf ikh”,tip:“Darf ich? = formal permission, Kann ich? = casual”},
+{de:“Ich möchte… / Ich will…”,en:“I would like… / I want… (polite vs strong)”,example:“Ich möchte einen Kaffee, bitte. (polite)”,phonetic:“ikh MÖSH-teh / ikh vil”,tip:“möchte = always polite, will = can sound rude”},
+{de:“Du musst / Du sollst / Du kannst das schaffen!”,en:“You must / You should / You can do it!”,example:“Du kannst das schaffen — ich glaube an dich!”,phonetic:“doo kanst das SHAF-fen”,tip:“schaffen = to manage/accomplish”},
+{de:“Ich kann kein Deutsch sprechen. (noch nicht!)”,en:“I can’t speak German. (not yet!)”,example:“Ich kann noch kein fließendes Deutsch sprechen, aber ich lerne!”,phonetic:“ikh kan kyne DOYTSH SHPREH-khen”,tip:“noch nicht = not yet — add this for optimism!”},
+],
+quiz:[
+{q:”‘Nicht dürfen’ means:”,options:[“Don’t have to”,“Must not (forbidden)”,“Shouldn’t”,“Can’t”],answer:1},
+{q:“Modal word order: ‘I must go home’:”,options:[“Ich muss gehe nach Hause”,“Ich muss nach Hause gehen”,“Gehen ich muss nach Hause”,“Ich nach Hause muss gehen”],answer:1},
+{q:“Which modal = external obligation from another person?”,options:[“wollen”,“können”,“sollen”,“mögen”],answer:2},
+{q:”‘Ich möchte’ vs ‘Ich will’:”,options:[“Identical meaning”,“möchte = polite, will = stronger/potentially rude”,“will = polite, möchte = stronger”,“No difference in practice”],answer:1},
+]
+},
+{ id:“a1_german_life”, title:“German Life & Culture”, emoji:“🇩🇪”, color:”#00CEC9”,
+story:“Language and culture are inseparable. These concepts will help you understand WHY Germans say what they say.”,
+grammar:“German has formal (Sie) and informal (du/ihr) registers. Using du with a stranger can be rude. Always wait for Germans to offer ‘Duzen’ (switching to du). Exception: students, young people, and sports teams often use du immediately.”,
+cards:[
+{de:“die Gemütlichkeit”,en:“coziness / warmth / conviviality”,example:“Das kleine Café hat echte Gemütlichkeit.”,phonetic:“geh-MÜT-likh-kyte”,tip:“UNTRANSLATABLE — warm, comfortable, relaxed atmosphere”},
+{de:“pünktlich / die Pünktlichkeit”,en:“punctual / punctuality”,example:“In Deutschland kommt man IMMER pünktlich!”,phonetic:“PÜNKT-likh / PÜNKT-likh-kyte”,tip:“Germans take punctuality VERY seriously — 5 min late = apologize!”},
+{de:“das Pfandsystem — 25 Cent pro Flasche”,en:“bottle deposit — 25 cents per bottle”,example:“Vergiss nicht das Pfand! Der Automat ist hier.”,phonetic:“PFANT-zühs-tem / OW-toh-maht”,tip:“Return bottles for cash — big green machines everywhere”},
+{de:“die Mülltrennung — Gelber Sack, Biotonne…”,en:“waste separation — yellow bag, organic bin…”,example:“Der Gelbe Sack ist für Plastik und Verpackung.”,phonetic:“MÜL-tren-noong / GEL-ber zak / BEE-oh-ton-neh”,tip:“Germany recycles obsessively — wrong bin = problem!”},
+{de:“per Du / per Sie — Duzen / Siezen”,en:“using du / using Sie — to du / to Sie someone”,example:“Darf ich Sie duzen? — Ja, natürlich!”,phonetic:“per doo / per zee / DOO-tsen / ZEE-tsen”,tip:“Duzen = invite to use du — a sign of friendship”},
+{de:“das Feierabend / der Urlaub”,en:“end of workday / vacation”,example:“Es ist 17 Uhr — endlich Feierabend!”,phonetic:“FY-er-ah-bent / OOR-lowp”,tip:“Feierabend = literally ‘celebration evening’!”},
+{de:“das Abendbrot”,en:“cold evening meal (bread, cold cuts, cheese)”,example:“Das typische Abendbrot: Brot, Käse, Aufschnitt.”,phonetic:“AH-bent-broht”,tip:“Many Germans eat hot only at lunch, cold at dinner”},
+{de:“Kaffee und Kuchen (Kaffeeklatsch)”,en:“coffee and cake (afternoon ritual)”,example:“Sonntags: Kaffee und Kuchen bei Oma!”,phonetic:“kah-FAY oont KOO-khen / kah-FAY-klatch”,tip:“Sunday afternoon ritual — very German and very cozy”},
+{de:“das Oktoberfest / der Weihnachtsmarkt”,en:“Oktoberfest / Christmas market”,example:“Der Weihnachtsmarkt in Nürnberg ist weltberühmt.”,phonetic:“ok-TOH-ber-fest / VY-nakhts-markt”,tip:“weltberühmt = world-famous (Welt = world)”},
+{de:“der Tatort / die Tagesschau”,en:“Germany’s most-watched crime show / evening news”,example:“Sonntags schaut ganz Deutschland den Tatort!”,phonetic:“TAH-tort / TAH-ges-show”,tip:“Tatort = scene of the crime — Sunday institution”},
+{de:“das Handshake-Ritual”,en:“the handshake ritual”,example:“In Deutschland schüttelt man sich zur Begrüßung die Hand.”,phonetic:“hant-shayk / beh-GRÜS-soong”,tip:“Germans shake hands more than many cultures — firm is good”},
+{de:“Denglisch: das Handy, das Smartphone, das Meeting”,en:“German-English mix: mobile phone, smartphone, meeting”,example:”‘Schick mir eine WhatsApp!’ — typisches Denglisch.”,phonetic:“HEN-dee”,tip:”‘Handy’ = mobile phone in German — NOT from English ‘handy’!”},
+],
+quiz:[
+{q:”‘Gemütlichkeit’ describes:”,options:[“A German sausage”,“A cozy, warm, comfortable atmosphere”,“A type of beer”,“A Christmas tradition”],answer:1},
+{q:“Being 5 minutes late in Germany:”,options:[“Is totally normal”,“Is rude — you should apologize”,“Is considered early”,“Depends on context”],answer:1},
+{q:”‘Feierabend’ means:”,options:[“Good morning”,“Start of work”,“End of the workday”,“A festival”],answer:2},
+{q:“A ‘Handy’ in German is:”,options:[“Something convenient”,“A small tool”,“A mobile phone”,“A wallet”],answer:2},
+]
+},
+{ id:“a1_mastery”, title:“A1 Complete Review”, emoji:“🏆”, color:”#FFD700”,
+story:“You’ve made it! 6 weeks, 18 lessons, and real German competency. Let’s confirm everything you know.”,
+grammar:“At A1, you can: introduce yourself, handle everyday transactions, ask/give directions, describe people and things, talk about family, express basic feelings, use present and perfect tense, and use modal verbs. That’s real communication!”,
+cards:[
+{de:“Ich kann mich vorstellen und andere begrüßen.”,en:“I can introduce myself and greet others.”,example:“Hallo, ich bin Anna. Ich komme aus Australien.”,phonetic:“ikh kan mikh FOR-shtel-en oont AN-deh-reh beh-GRÜS-en”,tip:“Vorstellen (reflexive) = to introduce oneself”},
+{de:“Ich kann im Restaurant bestellen.”,en:“I can order in a restaurant.”,example:“Ich möchte das Schnitzel mit Salat, bitte.”,phonetic:“ikh kan im res-toh-RANT beh-SHTEL-en”,tip:“bestellen = to order”},
+{de:“Ich kann nach dem Weg fragen.”,en:“I can ask for directions.”,example:“Entschuldigung, wie komme ich zum Bahnhof?”,phonetic:“ikh kan nakh dem vek FRAH-gen”,tip:“nach dem Weg fragen = to ask for directions”},
+{de:“Ich kann über die Familie sprechen.”,en:“I can talk about my family.”,example:“Ich habe einen Bruder und eine Schwester.”,phonetic:“ikh kan Ü-ber dee fah-MEE-lee-eh SHPREH-khen”,tip:“über = about (in this context)”},
+{de:“Ich kann Preise verstehen und fragen.”,en:“I can understand and ask about prices.”,example:“Wie viel kostet das? — Das kostet drei Euro.”,phonetic:“ikh kan PRY-zeh fer-SHTAY-en oont FRAH-gen”,tip:“Preise = prices (pl. of der Preis)”},
+{de:“Ich kann das Wetter beschreiben.”,en:“I can describe the weather.”,example:“Es ist sonnig und warm heute.”,phonetic:“ikh kan das VET-er beh-SHRY-ben”,tip:“beschreiben = to describe”},
+{de:“Ich kann über Aktivitäten in der Vergangenheit sprechen.”,en:“I can talk about past activities.”,example:“Gestern habe ich Fußball gespielt.”,phonetic:“ikh kan Ü-ber ak-tee-vi-TAY-ten SHPREH-khen”,tip:“Vergangenheit = past”},
+{de:“Ich kann Modalverben benutzen.”,en:“I can use modal verbs.”,example:“Ich muss morgen früh aufstehen. Ich kann das!”,phonetic:“ikh kan MOH-dal-fer-ben beh-NOOT-tsen”,tip:“6 modals: können, müssen, dürfen, sollen, wollen, mögen”},
+{de:“Ich verstehe einfache Texte.”,en:“I can understand simple texts.”,example:“Ich kann kurze E-Mails und SMS verstehen.”,phonetic:“ikh fer-SHTAY-eh EYN-fah-kheh TEK-steh”,tip:“einfach = simple/easy”},
+{de:“Ich kann Zahlen, Daten und Zeiten nennen.”,en:“I can say numbers, dates and times.”,example:“Es ist halb drei am Mittwoch, dem 5. März.”,phonetic:“ikh kan TSAH-len DAH-ten oont TSYE-ten NEN-en”,tip:“dem 5. März = on the 5th of March”},
+{de:“Ich lerne weiter! Deutsch macht Spaß!”,en:“I keep learning! German is fun!”,example:“Weiter so! Auf dem Weg zum A2!”,phonetic:“ikh LER-neh VY-ter / DOYTSH makht shpahs”,tip:“Spaß machen = to be fun (lit: make fun)”},
+{de:“Herzlichen Glückwunsch zum A1!”,en:“Congratulations on your A1!”,example:“Du hast es geschafft! Auf zum A2! 🎉”,phonetic:“HERTS-likh-en GLÜK-voontsh tsoom ah-YNSS”,tip:“geschafft = accomplished! You did it!”},
+],
+quiz:[
+{q:“At A1, you CAN do which of these?”,options:[“Write formal business letters”,“Discuss politics fluently”,“Introduce yourself and handle basic transactions”,“Understand fast native speech fully”],answer:2},
+{q:“German verb position in a main clause: verb in position”,options:[“1”,“2”,“3”,“Last”],answer:1},
+{q:”‘nicht müssen’ means:”,options:[“Must not (forbidden)”,“Don’t have to (optional)”,“Cannot”,“Shouldn’t”],answer:1},
+{q:“Perfekt uses ‘sein’ for:”,options:[“All verbs”,“Regular verbs”,“Motion and change verbs”,“Only sein itself”],answer:2},
+]
+},
+],
+testQuestions:[
+{q:”‘Nicht dürfen’ means:”,options:[“Don’t have to”,“Must not — forbidden”,“Shouldn’t”,“Can’t”],answer:1},
+{q:“What is ‘Gemütlichkeit’?”,options:[“A type of sausage”,“A cozy atmosphere”,“A German festival”,“A handshake ritual”],answer:1},
+{q:“Modal word order: ‘I must sleep’ =”,options:[“Ich muss schlafe”,“Ich muss schlafen”,“Schlafen ich muss”,“Ich schlafen muss”],answer:1},
+{q:”’-ung’ suffix = which gender?”,options:[“Der”,“Die”,“Das”,“Varies”],answer:1},
+{q:”‘A Handy’ in German is:”,options:[“Something useful”,“A mobile phone”,“A small bag”,“A German word”],answer:1},
+{q:“Separable verb — prefix goes to:”,options:[“Position 1”,“Position 2”,“The end”,“Stays attached”],answer:2},
+{q:”‘Feierabend’ =”,options:[“Morning routine”,“End of the workday”,“A party”,“A holiday”],answer:1},
+{q:“Accusative masculine: ‘Ich sehe ___ Mann’”,options:[“der”,“die”,“den”,“dem”],answer:2},
+{q:“Past participle of ‘spielen’ (play):”,options:[“Gespielt”,“Gegangen”,“Gespielen”,“Spielte”],answer:0},
+{q:“Perfekt of ‘fahren’ uses:”,options:[“haben”,“sein”,“both”,“neither”],answer:1},
+]
+},
+];
+
+const WEEKS_A2 = [
+{
+id:7, title:“Woche 7”, subtitle:“Grammar Unlocked”, color:”#00B894”, tier:“A2”,
+lessons:[
+{ id:“cases_a2”, title:“The 4 German Cases”, emoji:“🧩”, color:”#00B894”,
+story:“Cases are THE biggest leap in German. Once it clicks, sentences make real sense!”,
+grammar:“4 cases: Nominativ (subject), Akkusativ (direct object), Dativ (indirect object), Genitiv (possession). Only masculine changes in Akkusativ: der→den. Dativ: dem/der/dem. Prepositions force specific cases.”,
+cards:[
+{de:“Nominativ: wer/was macht etwas?”,en:“Nominative: who/what is doing the action?”,example:“Der Mann kauft einen Apfel.”,phonetic:“noh-mee-nah-TEEF”,tip:“Subject — der/die/das stays the same”},
+{de:“Akkusativ: den/die/das (nur der→den!)”,en:“Accusative: only masculine changes: der→den”,example:“Ich sehe den Mann. Ich kaufe das Buch.”,phonetic:“ah-koo-zah-TEEF / dayn”,tip:“ONLY masculine changes! die and das stay the same”},
+{de:“Dativ: dem/der/dem (indirect object)”,en:“Dative: to/for whom?”,example:“Ich gebe dem Mann das Buch.”,phonetic:“DAH-teef / daym / der / daym”,tip:“Dative verbs: geben, helfen, danken, gehören”},
+{de:“mit dem / mit der / mit dem (immer Dativ!)”,en:“with the… (dative — always!)”,example:“Ich fahre mit dem Bus. Ich spreche mit der Ärztin.”,phonetic:“mit daym / mit der”,tip:“mit ALWAYS takes dative — no exceptions!”},
+{de:“Bewegung → Akkusativ (Wohin?)”,en:“Movement → Accusative (where to?)”,example:“Ich gehe in die Stadt. Er stellt es auf den Tisch.”,phonetic:“beh-VAY-goong / VOH-hin”,tip:“Going INTO = accusative”},
+{de:“Ort → Dativ (Wo?)”,en:“Location → Dative (where?)”,example:“Ich bin in der Stadt. Das Buch liegt auf dem Tisch.”,phonetic:“ort / voh”,tip:“Being IN a place = dative”},
+{de:“für / durch / ohne / gegen / um → Akkusativ”,en:“for / through / without / against / around → Accusative”,example:“Das ist für dich. Wir fahren durch den Tunnel.”,phonetic:“führ / dooRKH / OH-neh / GAY-gen / oom”,tip:“These 5 ALWAYS take accusative”},
+{de:“aus / bei / mit / nach / seit / von / zu → Dativ”,en:“from / at / with / to / since / of / to → Dative”,example:“Ich komme aus Deutschland. Ich bin seit zwei Jahren hier.”,phonetic:“ows / by / mit / nakh / zyte / fon / tsoo”,tip:“These 7 ALWAYS take dative — memorize!”},
+{de:“mein/dein/sein/ihr/unser/euer/Ihr”,en:“my/your/his/her/our/your-all/Your(formal)”,example:“Mein Bruder, deine Schwester, sein Auto.”,phonetic:“myne / dyne / zyne / eer / OON-zer / OY-er”,tip:“All follow the ein/kein pattern”},
+{de:“wegen + Genitiv / trotz + Genitiv”,en:“because of / despite + genitive”,example:“Wegen des Regens bleibe ich zu Hause.”,phonetic:“VAY-gen / trots + des/der”,tip:“wegen des = because of the (genitive!)”},
+{de:“seit + Präsens (noch andauernd!)”,en:“since/for + present tense (ongoing!)”,example:“Ich lerne seit zwei Jahren Deutsch.”,phonetic:“zyte TSVY YAH-ren DOYTSH”,tip:“In German, use PRESENT tense for ongoing ‘since’!”},
+{de:“Genitiv: des Mannes / der Frau / des Kindes”,en:“Genitive: of the man / woman / child”,example:“Das Auto des Mannes ist rot.”,phonetic:“des MAN-es / der frow / des KIN-des”,tip:“Masculine/neuter add -s to noun too!”},
+],
+quiz:[
+{q:”‘Ich esse ___ Apfel’ (accusative, masculine):”,options:[“der”,“die”,“den”,“dem”],answer:2},
+{q:”‘Ich fahre mit ___ Bus’ (dative, masculine):”,options:[“der”,“die”,“den”,“dem”],answer:3},
+{q:“Movement uses ___, location uses ___:”,options:[“Dative, Accusative”,“Accusative, Dative”,“Both dative”,“Both accusative”],answer:1},
+{q:”‘Seit’ + ongoing action → which tense?”,options:[“Past”,“Future”,“Present”,“Perfekt”],answer:2},
+]
+},
+{ id:“past_a2”, title:“Past Tense in Depth”, emoji:“⏪”, color:”#6C5CE7”,
+story:“Monday morning in your WG. Roommate: ‘Na, wie war dein Wochenende?’ Tell the full story!”,
+grammar:“Spoken past = Perfekt. Written past = Präteritum. Exception: sein, haben, modal verbs always use Präteritum even in speech. Strong (irregular) verbs in Präteritum: ich ging, ich aß, ich trank, ich schlief.”,
+cards:[
+{de:“Perfekt: haben/sein + Partizip II”,en:“Spoken past: haben/sein + past participle”,example:“Ich habe gegessen. Ich bin gegangen.”,phonetic:“HAH-beh / bin + geh-MAKHT”,tip:“Perfekt = always use in spoken German”},
+{de:“Präteritum von sein: war/warst/war/waren”,en:“Simple past of sein: was/were”,example:“Gestern war das Wetter toll. Wo warst du?”,phonetic:“var / varst / var / VAH-ren”,tip:“ALWAYS use war/waren in speech — not ‘ist gewesen’!”},
+{de:“Präteritum von haben: hatte/hattest/hatte”,en:“Simple past of haben: had”,example:“Ich hatte keine Zeit. Hattest du Spaß?”,phonetic:“HAT-teh / HAT-test / HAT-ten”,tip:“ALWAYS use hatte in speech — not ‘hat gehabt’!”},
+{de:“Unregelmäßige Verben: ging / fuhr / aß / trank”,en:“Irregular simple past: went / drove / ate / drank”,example:“Ich ging ins Kino. Ich aß Pizza.”,phonetic:“ging / foor / ahs / trank”,tip:“Präteritum of strong verbs — learn in context”},
+{de:“Vorvergangenheit: hatte … gemacht (Plusquamperfekt)”,en:“Past perfect: had done (before another past event)”,example:“Als ich ankam, hatte er schon gegessen.”,phonetic:“HAT-teh … geh-MAKHT”,tip:“als = when (single event in past)”},
+{de:“vor + Zeitangabe (ago)”,en:“vor = ago”,example:“Ich war vor drei Jahren zum ersten Mal in Berlin.”,phonetic:“for dry YAH-ren”,tip:“vor einem Jahr = a year ago, vor zehn Minuten = 10 min ago”},
+{de:“Damals / früher / als ich jung war”,en:“Back then / earlier / when I was young”,example:“Früher wohnte ich in München.”,phonetic:“DAH-mahls / FRÜH-er / als ikh yoong var”,tip:“früher = in the past, as a child”},
+{de:“Ich habe es genossen. / Es hat Spaß gemacht.”,en:“I enjoyed it. / It was fun.”,example:“Das Konzert war super — ich habe es wirklich genossen!”,phonetic:“ikh HAH-beh es geh-NOS-en / es hat shpahs geh-MAKHT”,tip:“genießen = to enjoy → genossen”},
+{de:“Was hast du letzte Woche gemacht?”,en:“What did you do last week?”,example:“Letzte Woche war ich auf einer Party.”,phonetic:“vas hast doo LETS-teh VOH-kheh geh-MAKHT”,tip:“auf einer Party = at a party”},
+{de:“Ich bin … gewesen (formal Perfekt of sein)”,en:“I was (formal/written perfect of sein)”,example:“Ich bin noch nie in Japan gewesen.”,phonetic:“ikh bin … geh-VAY-zen”,tip:“In writing: use gewesen; in speech: use war”},
+{de:“nachdem + Plusquamperfekt → Perfekt”,en:“after (having done)… → past perfect then past”,example:“Nachdem ich gegessen hatte, ging ich spazieren.”,phonetic:“NAKH-dem … HAT-teh”,tip:“nachdem sets up a sequence: action A, then action B”},
+{de:“Als ich … war, … (childhood memories)”,en:“When I was … (single past period)”,example:“Als ich Kind war, wohnte ich auf dem Land.”,phonetic:“als ikh … var”,tip:“als = when (SINGLE past period, not repeated)”},
+],
+quiz:[
+{q:”‘I was tired’ in spoken German:”,options:[“Ich bin müde gewesen”,“Ich war müde”,“Ich habe müde gehabt”,“Ich müde war”],answer:1},
+{q:”‘vor drei Jahren’ means:”,options:[“In three years”,“Three years ago”,“For three years”,“Since three years”],answer:1},
+{q:“Which tense for ‘sein’ in speech?”,options:[“Perfekt: bin gewesen”,“Präteritum: war”,“Future: werde sein”,“Always Präsens”],answer:1},
+{q:”‘als’ (when) in past = which type of event?”,options:[“Repeated”,“Ongoing”,“Single/one-time”,“Future”],answer:2},
+]
+},
+{ id:“adjectives_a2”, title:“Adjectives & Descriptions”, emoji:“✨”, color:”#FDCB6E”,
+story:“You want to describe Berlin to a friend: ‘Wie ist Berlin?’ — paint a vivid picture with words!”,
+grammar:“Adjectives BEFORE a noun take endings based on gender/case/article. AFTER ‘ist/sind/war’ (predicative position), NO ending needed: ‘Der Mann ist groß’ but ‘ein großer Mann’. Three declension tables: definite, indefinite, zero article.”,
+cards:[
+{de:“groß / klein / riesig / winzig”,en:“big / small / enormous / tiny”,example:“Berlin ist eine riesige, aber gemütliche Stadt.”,phonetic:“grohs / klyne / REE-zikh / VIN-tsikh”,tip:“riesig = gigantic, winzig = tiny”},
+{de:“alt / neu / jung / modern / historisch”,en:“old / new / young / modern / historic”,example:“Das alte Gebäude steht neben dem neuen Hotel.”,phonetic:“alt / noy / yoong / mo-DERN / his-TOH-rish”,tip:“After der/die/das: adjective + -e or -en”},
+{de:“schön / hässlich / wunderschön”,en:“beautiful / ugly / gorgeous”,example:“Der Sonnenuntergang war wunderschön.”,phonetic:“shön / HES-likh / VOON-der-shön”,tip:“Sonnenuntergang = sunset (sun-under-going)”},
+{de:“schnell / langsam / laut / leise / ruhig”,en:“fast / slow / loud / quiet / calm”,example:“Die U-Bahn ist schnell aber oft laut.”,phonetic:“shnel / LANG-zahm / lowt / LY-zeh / ROO-ikh”,tip:“ruhig = calm (broader), leise = quiet (sound-related)”},
+{de:“einfach / schwierig / unmöglich / machbar”,en:“easy / difficult / impossible / doable”,example:“Deutsch ist schwierig aber nicht unmöglich!”,phonetic:“EYN-fakh / SHVEE-rikh / oon-MÖH-glikh / MAKHbar”,tip:“un- prefix = negative (like English un-)”},
+{de:“Adjektivendung nach der/die/das: -e oder -en”,en:“Adjective ending after der/die/das: -e or -en”,example:“der alte Mann, die alte Frau, das alte Kind”,phonetic:”-eh / -en”,tip:“After definite article: Nom/Akk sing. = -e, rest = -en”},
+{de:“Adjektivendung nach ein/eine/ein: gemischt”,en:“Adjective ending after ein/eine/ein: mixed”,example:“ein großer Mann, eine große Frau, ein großes Kind”,phonetic:“ein GROH-ser man / EYE-neh GROH-seh frow”,tip:“After indefinite: take the der/die/das ending INTO the adjective”},
+{de:“Komparativ: adjektiv + -er”,en:“Comparative: adjective + -er”,example:“Berlin ist teurer als München. Das Buch ist dicker.”,phonetic:”-er”,tip:“als = than (in comparisons)”},
+{de:“Superlativ: am + adjektiv + -sten”,en:“Superlative: am + adjective + -sten”,example:“Das war das beste Essen meines Lebens!”,phonetic:“am + -sten”,tip:“gut→besser→am besten (irregular!)”},
+{de:“genauso … wie (as … as)”,en:“just as … as”,example:“Berlin ist genauso teuer wie Hamburg.”,phonetic:“geh-NOW-zoh … vee”,tip:“genauso … wie = same level of quality”},
+{de:“sehr / ziemlich / ein bisschen / kaum / gar nicht”,en:“very / quite / a little / barely / not at all”,example:“Das ist ziemlich teuer aber sehr schön.”,phonetic:“zayr / TSEEM-likh / yne BIS-khen / kowm / gar nikht”,tip:“ziemlich = pretty/quite (NOT beautiful in this context!)”},
+{de:“freundlich / höflich / hilfsbereit / ungeduldig”,en:“friendly / polite / helpful / impatient”,example:“Die Berliner sind meistens sehr freundlich.”,phonetic:“FROYNT-likh / HÖF-likh / HILFS-beh-ryte / OON-geh-dool-dikh”,tip:“meistens = usually/mostly”},
+],
+quiz:[
+{q:”‘Ein großer Mann’ — why ‘-er’?”,options:[“Masculine nominative without definite article”,“All adjectives end in -er”,“After ein, always -er”,“Random”],answer:0},
+{q:“Superlative: gut → besser → ?”,options:[“am gutesten”,“am besten”,“am güten”,“am bessten”],answer:1},
+{q:”‘Schwierig’ means:”,options:[“Easy”,“Beautiful”,“Difficult”,“Interesting”],answer:2},
+{q:”‘genauso groß wie’ means:”,options:[“Bigger than”,“Smaller than”,“Just as big as”,“Almost as big as”],answer:2},
+]
+},
+],
+testQuestions:[
+{q:”‘Ich esse ___ Apfel’ (accusative):”,options:[“der”,“die”,“den”,“dem”],answer:2},
+{q:”‘I was in Berlin’ in spoken German:”,options:[“Ich bin in Berlin gewesen”,“Ich war in Berlin”,“Ich habe in Berlin gehabt”,“Ich in Berlin war”],answer:1},
+{q:”‘Ein großer Mann’ — adjective ending ‘-er’ because:”,options:[“All adjectives use -er”,“Masculine nom. after ein needs the der-ending”,“Random”,“Comparative form”],answer:1},
+{q:”‘vor drei Jahren’ =”,options:[“In three years”,“For three years”,“Three years ago”,“Since three years”],answer:2},
+{q:”‘seit’ + ongoing action → which tense in German?”,options:[“Past”,“Future”,“Present”,“Perfekt”],answer:2},
+{q:”‘durch’ always takes which case?”,options:[“Dative”,“Genitive”,“Accusative”,“Nominative”],answer:2},
+{q:“Superlative: gut → ?”,options:[“am gutsten”,“am besten”,“am guten”,“am güten”],answer:1},
+{q:“Movement uses ___, location uses ***:”,options:[“Dative, Accusative”,“Accusative, Dative”,“Both accusative”,“Both dative”],answer:1},
+{q:”‘ziemlich’ means:”,options:[“Very”,“Too much”,“Quite”,“A little”],answer:2},
+{q:“Which modal verb uses Präteritum even in speech?”,options:[“gehen”,“essen”,“sein”,“laufen”],answer:2},
+]
+},
+{
+id:8, title:“Woche 8”, subtitle:“Real Conversations”, color:”#E17055”, tier:“A2”,
+lessons:[
+{ id:“opinions_a2”, title:“Opinions & Discussions”, emoji:“💬”, color:”#E17055”,
+story:“Germans love a good debate. Your friend wants to discuss ‘Berlin vs. Munich — which is better?’ Time to hold your own!”,
+grammar:“Opinion phrases with ‘dass’ send the verb to the END: ‘Ich glaube, dass Berlin cool ist.’ The verb ‘ist’ jumps to last position. This is called the Nebensatz (subordinate clause) rule.”,
+cards:[
+{de:“Ich denke / glaube / finde, dass…”,en:“I think / believe / find that…”,example:“Ich glaube, dass Berlin cooler als München ist.”,phonetic:“ikh DEN-keh / GLOW-beh / FIN-deh das”,tip:“dass clause = verb goes LAST”},
+{de:“Meiner Meinung nach…”,en:“In my opinion…”,example:“Meiner Meinung nach ist das zu teuer.”,phonetic:“MY-ner MY-noong nakh”,tip:“Sounds very native — impress Germans with this!”},
+{de:“Das stimmt. / Das stimmt nicht.”,en:“That’s true. / That’s not true.”,example:“Das stimmt absolut! / Das stimmt überhaupt nicht!”,phonetic:“das shtimmt / das shtimmt nikht”,tip:“überhaupt nicht = not at all”},
+{de:“Ich stimme dir zu. / Ich bin anderer Meinung.”,en:“I agree. / I have a different opinion.”,example:“Da stimme ich dir voll zu!”,phonetic:“ikh SHTIM-eh deer tsoo / AN-deh-rer MY-noong”,tip:“voll = completely (colloquial)”},
+{de:“Einerseits… andererseits…”,en:“On one hand… on the other hand…”,example:“Einerseits ist Berlin günstig, andererseits laut.”,phonetic:“EYE-ner-zyts / AN-der-er-zyts”,tip:“Classic debate structure — very useful!”},
+{de:“Es kommt darauf an.”,en:“It depends.”,example:“Ist Deutschland teuer? — Es kommt darauf an.”,phonetic:“es kommt dah-ROWF an”,tip:“The universal diplomatic non-answer!”},
+{de:“Ich bin dafür. / Ich bin dagegen.”,en:“I’m for it. / I’m against it.”,example:“Bist du dafür oder dagegen?”,phonetic:“ikh bin dah-FÜR / dah-GAY-gen”,tip:“dafür/dagegen = great for quick positions”},
+{de:“Was denkst du darüber?”,en:“What do you think about it?”,example:“Was denkst du eigentlich darüber?”,phonetic:“vas denkst doo dah-RÜH-ber”,tip:“darüber = about it/that, eigentlich = actually”},
+{de:“Das hängt davon ab, ob…”,en:“That depends on whether…”,example:“Das hängt davon ab, ob das Wetter gut ist.”,phonetic:“das hengt dah-FON ap op”,tip:“ob = whether (indirect yes/no)”},
+{de:“weil (because) → Verb ans Ende!”,en:“because → verb to the end!”,example:“Ich lerne Deutsch, weil es sehr interessant ist.”,phonetic:“vyle … ist”,tip:“weil is the most used subordinating conjunction”},
+{de:“obwohl (although) → Verb ans Ende!”,en:“although → verb to the end!”,example:“Obwohl es regnet, gehe ich spazieren.”,phonetic:“op-VOHL … GAY-eh”,tip:“The obwohl clause can come first!”},
+{de:“denn (because/for) — KEIN Verbletztstellung!”,en:“because/for — does NOT send verb last!”,example:“Ich lerne Deutsch, denn es macht mir Spaß.”,phonetic:“den … makht meer shpahs”,tip:“denn ≠ weil: denn keeps normal V2 order!”},
+],
+quiz:[
+{q:”‘Meiner Meinung nach’ means:”,options:[“I think that”,“According to you”,“In my opinion”,“It depends”],answer:2},
+{q:“After ‘dass’, the verb goes:”,options:[“First”,“Second”,“Third”,“Last”],answer:3},
+{q:”‘weil’ vs ‘denn’ — which sends verb to end?”,options:[“denn”,“weil”,“Both”,“Neither”],answer:1},
+{q:”‘Es kommt darauf an’ =”,options:[“It is expensive”,“It depends”,“I agree”,“I’m not sure”],answer:1},
+]
+},
+{ id:“future_conditionals”, title:“Future & Conditionals”, emoji:“🔮”, color:”#00CEC9”,
+story:“Your German friend asks ‘Was hast du vor?’ What are your plans and dreams?”,
+grammar:“Future: present tense + time word (‘Morgen gehe ich…’) OR werden + infinitive. Konjunktiv II (subjunctive): würde + infinitive for hypotheticals. könnte/wäre/hätte = could/would be/would have.”,
+cards:[
+{de:“Ich werde… (Futur I)”,en:“I will… (Future I)”,example:“Ich werde nächstes Jahr nach Berlin ziehen.”,phonetic:“ikh VER-deh … (tsoo-TSEE-en)”,tip:“werden + infinitive at end of clause”},
+{de:“Ich möchte / will / plane zu…”,en:“I’d like to / want to / plan to…”,example:“Ich möchte Deutsch fließend sprechen.”,phonetic:“ikh MÖSH-teh / vil / PLAH-neh tsoo”,tip:“möchten = polite, wollen = stronger”},
+{de:“nächste Woche / nächsten Monat / nächstes Jahr”,en:“next week / month / year”,example:“Nächstes Jahr reise ich nach Japan.”,phonetic:“NEKHS-teh VOH-kheh / NEKHS-ten MOH-naht / NEKHS-tes yahr”,tip:“nächst- follows adjective endings”},
+{de:“Ich würde gerne… (Konjunktiv II)”,en:“I would like to… (subjunctive)”,example:“Ich würde gerne nach Neuseeland reisen.”,phonetic:“ikh VÜR-deh GER-neh”,tip:“würde = would — most common subjunctive form”},
+{de:“Wenn ich könnte, würde ich…”,en:“If I could, I would…”,example:“Wenn ich könnte, würde ich jeden Tag reisen.”,phonetic:“ven ikh KÖN-teh VÜR-deh ikh”,tip:“könnte = could (Konjunktiv of können)”},
+{de:“Das wäre schön! / Ich wäre gerne…”,en:“That would be nice! / I’d like to be…”,example:“Ich wäre gerne Musiker. Das wäre so schön!”,phonetic:“das VAY-reh shön / ikh VAY-reh GER-neh”,tip:“wäre = would be (Konjunktiv of sein)”},
+{de:“Ich hätte gerne… / Ich hätte lieber…”,en:“I would like to have… / I’d prefer…”,example:“Ich hätte gerne mehr Zeit!”,phonetic:“ikh HET-teh GER-neh / LEE-ber”,tip:“hätte = would have (Konjunktiv of haben)”},
+{de:“Du solltest / müsstest… (Rat geben)”,en:“You should / ought to… (giving advice)”,example:“Du solltest mehr Wasser trinken.”,phonetic:“doo ZOL-test / MÜS-test”,tip:“Konjunktiv II of modals = polite advice”},
+{de:“An deiner Stelle würde ich…”,en:“If I were you, I would…”,example:“An deiner Stelle würde ich das nicht riskieren.”,phonetic:“an DY-ner SHTEL-leh VÜR-deh ikh”,tip:“Great diplomatic way to give advice”},
+{de:“Ich hoffe, dass… / Ich wünsche mir…”,en:“I hope that… / I wish for…”,example:“Ich hoffe, dass das Wetter besser wird.”,phonetic:“ikh HOF-eh das / ikh VÜN-sheh meer”,tip:“wünschen + sich = reflexive with dative”},
+{de:“Mal sehen! / Wir werden sehen!”,en:“We’ll see! (non-commitment)”,example:“Wirst du kommen? — Mal sehen!”,phonetic:“mal ZAY-en / veer VER-den ZAY-en”,tip:“Typical German non-commitment expression!”},
+{de:“In fünf Jahren möchte ich… sein.”,en:“In five years I’d like to be…”,example:“In fünf Jahren möchte ich fließend Deutsch sprechen.”,phonetic:“in fühnf YAH-ren MÖSH-teh ikh”,tip:“fließend = fluently — your ultimate goal!”},
+],
+quiz:[
+{q:“How do you say ‘I will go to Hamburg’?”,options:[“Ich bin nach Hamburg gegangen”,“Ich gehe nach Hamburg”,“Ich werde nach Hamburg fahren”,“Ich war in Hamburg”],answer:2},
+{q:”‘Das wäre toll!’ means:”,options:[“That is great!”,“That was great!”,“That would be great!”,“That will be great!”],answer:2},
+{q:”‘Du solltest’ means:”,options:[“You must”,“You should”,“You may”,“You want to”],answer:1},
+{q:”‘Mal sehen’ expresses:”,options:[“Certainty”,“Refusal”,“Non-commitment”,“Enthusiasm”],answer:2},
+]
+},
+{ id:“work_formal”, title:“Work, Writing & Formal German”, emoji:“💼”, color:”#A29BFE”,
+story:“You want to write a German email, apply for a job, or navigate bureaucracy. Real-world formal German!”,
+grammar:“Formal letters start with ‘Sehr geehrte/r…’ and end with ‘Mit freundlichen Grüßen’. Formal emails use ‘Sie’. Konjunktiv I is used in reported speech: ‘Er sagt, er sei krank.’ You’ll see this in news articles.”,
+cards:[
+{de:“Sehr geehrte Damen und Herren,”,en:“Dear Sir or Madam, (formal letter opener)”,example:“Sehr geehrte Damen und Herren, ich schreibe wegen…”,phonetic:“zayr geh-EHR-teh DAH-men oont HER-ren”,tip:“The most formal opener — never wrong”},
+{de:“Liebe Anna, / Lieber Klaus, (informal)”,en:“Dear Anna, / Dear Klaus, (informal)”,example:“Liebe Anna, ich hoffe, es geht dir gut!”,phonetic:“LEE-beh / LEE-ber”,tip:“Liebe (f) / Lieber (m) + first name”},
+{de:“Mit freundlichen Grüßen / Viele Grüße”,en:“Kind regards / Many greetings”,example:“Mit freundlichen Grüßen, Thomas Müller”,phonetic:“mit FROYNT-likh-en GRÜH-ssen / FEE-leh GRÜH-seh”,tip:“MfG is acceptable abbreviation in casual emails”},
+{de:“Ich schreibe Ihnen wegen…”,en:“I am writing to you regarding…”,example:“Ich schreibe Ihnen wegen meiner Bewerbung.”,phonetic:“ikh SHRY-beh EE-nen VAY-gen”,tip:“Bewerbung = job/university application”},
+{de:“Anbei / Im Anhang finden Sie…”,en:“Attached / In the attachment you will find…”,example:“Anbei schicke ich Ihnen meine Unterlagen.”,phonetic:“AN-by / im AN-hang”,tip:“Unterlagen = documents (formal)”},
+{de:“Ich freue mich auf Ihre Antwort.”,en:“I look forward to your reply.”,example:“Ich freue mich auf Ihre baldige Antwort.”,phonetic:“ikh FROY-eh mikh owf EE-reh ANT-vort”,tip:“baldige = prompt/timely (formal)”},
+{de:“Konjunktiv I: er sei / habe / werde”,en:“Reported speech: he is (reportedly) / has / will”,example:“Er sagt, er sei krank und könne nicht kommen.”,phonetic:“er zye / HAH-beh / VER-deh”,tip:“sei = Konjunktiv I of sein — used in journalism!”},
+{de:“laut (according to) / angeblich (allegedly)”,en:“according to / allegedly”,example:“Laut Bericht hat er das gesagt.”,phonetic:“lowt / AN-geh-blikh”,tip:“Essential for reading German news”},
+{de:“das Formular / der Antrag / die Behörde”,en:“form / application / government authority”,example:“Sie müssen dieses Formular einreichen.”,phonetic:“for-MOO-lar / AN-trahk / beh-HÖR-deh”,tip:“einreichen = to submit (to authority)”},
+{de:“außerdem / darüber hinaus / deshalb / jedoch”,en:“moreover / furthermore / therefore / however”,example:“Das ist günstig. Außerdem ist es qualitativ gut.”,phonetic:“OW-ser-dem / dah-RÜH-ber / DES-halp / YEH-dokh”,tip:“These connectors = professional-sounding writing!”},
+{de:“die Kündigung / der Vertrag / unterschreiben”,en:“termination notice / contract / to sign”,example:“Bitte unterschreiben Sie den Vertrag.”,phonetic:“KÜN-dee-goong / fer-TRAHK / OON-ter-shry-ben”,tip:“unterschreiben = to sign (separable verb)”},
+{de:“Herzlichen Glückwunsch zum A2!”,en:“Congratulations on your A2!”,example:“Du hast es geschafft! Jetzt B1! 🎉”,phonetic:“HERTS-likh-en GLÜK-voontsh tsoom ah-TSVY”,tip:“You’ve completed A2! B1 is waiting for you!”},
+],
+quiz:[
+{q:“A formal German letter closes with:”,options:[“Tschüss!”,“Ciao!”,“Mit freundlichen Grüßen”,“Auf Wiedersehen!”],answer:2},
+{q:”‘Er sagt, er sei krank’ — ‘sei’ is:”,options:[“Past tense”,“Konjunktiv I (reported speech)”,“Subjunctive II”,“Future”],answer:1},
+{q:”‘Anbei schicke ich Ihnen…’ means:”,options:[“Please send me…”,“I’m looking for…”,“Attached I’m sending you…”,“I received your…”],answer:2},
+{q:”‘deshalb’ means:”,options:[“Moreover”,“Therefore”,“However”,“Additionally”],answer:1},
+]
+},
+],
+testQuestions:[
+{q:”‘Meiner Meinung nach’ means:”,options:[“I think that”,“According to you”,“In my opinion”,“It depends”],answer:2},
+{q:”‘Das wäre toll!’ means:”,options:[“That is great!”,“That was great!”,“That would be great!”,“That will be great!”],answer:2},
+{q:“A formal German letter closes with:”,options:[“Tschüss!”,“Viele Grüße”,“Mit freundlichen Grüßen”,“Auf Wiedersehen”],answer:2},
+{q:“After ‘dass’, verb goes:”,options:[“First”,“Second”,“Third”,“Last”],answer:3},
+{q:”‘weil’ vs ‘denn’ — which sends verb to end?”,options:[“denn”,“weil”,“Both”,“Neither”],answer:1},
+{q:”‘Ich werde nach Berlin fahren’ — this is:”,options:[“Past tense”,“Present tense”,“Future tense”,“Conditional”],answer:2},
+{q:”‘Ich würde gerne reisen’ uses:”,options:[“Present tense”,“Konjunktiv II”,“Simple past”,“Future”],answer:1},
+{q:”‘Du solltest’ means:”,options:[“You must”,“You should”,“You may”,“You want to”],answer:1},
+{q:”‘Seit’ + ongoing action uses which tense?”,options:[“Past”,“Future”,“Present”,“Perfekt”],answer:2},
+{q:”‘deshalb’ means:”,options:[“Moreover”,“Therefore”,“However”,“Also”],answer:1},
+]
+},
+{
+id:9, title:“Woche 9”, subtitle:“Fluency Builder”, color:”#6C5CE7”, tier:“A2”,
+lessons:[
+{ id:“complex_grammar”, title:“Complex Sentences”, emoji:“🔗”, color:”#6C5CE7”,
+story:“Simple sentences are fine. But linking ideas is what makes you sound truly fluent. Elevate your German!”,
+grammar:“Subordinating conjunctions (weil, obwohl, dass, wenn, bevor, nachdem, während) → verb to END. Coordinating conjunctions (und, aber, oder, denn, sondern) → NO word order change. Relative clauses: ‘Das Buch, das ich lese…’ — pronoun matches article.”,
+cards:[
+{de:“damit / sodass (so that / such that)”,en:“so that (purpose/result)”,example:“Ich lerne Deutsch, damit ich kommunizieren kann.”,phonetic:“dah-MIT / zoh-DAS”,tip:“damit = intentional purpose, sodass = result”},
+{de:“bevor / nachdem / während (time)”,en:“before / after / while”,example:“Bevor ich schlafe, lese ich 30 Minuten.”,phonetic:“beh-FOR / NAKH-dem / VEH-rent”,tip:“All send verb to end! nachdem → Perfekt tense”},
+{de:“je… desto… (the more… the more…)”,en:“the more X, the more Y”,example:“Je mehr ich übe, desto besser werde ich.”,phonetic:“yeh … DES-toh”,tip:“POWERFUL structure — impresses native speakers!”},
+{de:“nicht nur… sondern auch…”,en:“not only… but also…”,example:“Ich spreche nicht nur Deutsch, sondern auch Spanisch.”,phonetic:“nikht noor … ZON-dern owkh”,tip:“sondern = but rather (corrects negation)”},
+{de:“entweder… oder… / weder… noch…”,en:“either… or… / neither… nor…”,example:“Entweder Kaffee oder Tee?”,phonetic:“ent-VAY-der … OH-der / VAY-der … nokh”,tip:“weder… noch = neither… nor (double negative)”},
+{de:“trotzdem / dennoch / jedoch (contrast)”,en:“nevertheless / nonetheless / however”,example:“Es ist schwierig. Trotzdem übe ich jeden Tag!”,phonetic:“TROTS-dem / DEN-nokh / YEH-dokh”,tip:“These don’t change word order (Konjunktivadverbien)”},
+{de:“Relativsatz: Das Buch, das ich lese…”,en:“Relative clause: The book that I’m reading…”,example:“Der Mann, der dort steht, ist mein Bruder.”,phonetic:“das bookh das ikh LAY-zeh”,tip:“Relative pronoun = matches article of the noun”},
+{de:“Indirekter Fragesatz: ob / wann / was / wo”,en:“Indirect question: whether / when / what / where”,example:“Ich weiß nicht, ob das stimmt.”,phonetic:“ikh vys nikht op das shtimmt”,tip:“Indirect questions → verb to end!”},
+{de:“als (when — single past event)”,en:“when (single past event) vs wenn (repeated/future)”,example:“Als ich Kind war, wohnte ich in München.”,phonetic:“als ikh kint var”,tip:“als = single past moment, wenn = repeated or future”},
+{de:“Passiv: Das Buch wird gelesen.”,en:“Passive voice: The book is being read.”,example:“Das Formular wird ausgefüllt.”,phonetic:“das bookh virt geh-LAY-zen”,tip:“werden + Partizip II = Passiv. Often used in formal German”},
+{de:“lassen + Infinitiv (to have/let someone do)”,en:“to have done / to let someone do”,example:“Ich lasse das Auto reparieren.”,phonetic:“ikh LAS-eh das ow-TOH reh-pah-REER-en”,tip:“lassen = to let/have — very common in daily German”},
+{de:“Wortstellung: TeKaMoLo”,en:“Time-Cause-Manner-Place word order”,example:“Ich fahre morgen wegen der Arbeit schnell nach Berlin.”,phonetic:“TSEH-kah-moh-loh”,tip:“TeKaMoLo: Time first, Place last — the order of adverbials”},
+],
+quiz:[
+{q:“Complete: ‘Ich lerne, weil es ___ ist’”,options:[“ist interessant”,“interessant ist”,“interessant war”,“es interessant”],answer:1},
+{q:”‘Je mehr ich lerne, desto…’ means:”,options:[“The more I learn, the…”,“When I learn more…”,“Although I learn more…”,“Because I learn more…”],answer:0},
+{q:”‘als’ (when) in past refers to:”,options:[“Repeated action”,“Single event”,“Future”,“Condition”],answer:1},
+{q:”‘Das Buch wird gelesen’ is:”,options:[“Active present”,“Passive present”,“Past tense”,“Future”],answer:1},
+]
+},
+{ id:“prepositions_a2”, title:“Prepositions Mastery”, emoji:“🧭”, color:”#74B9FF”,
+story:“Prepositions are the glue of German — and where most mistakes happen. Let’s nail them once and for all!”,
+grammar:“Two-way prepositions (Wechselpräpositionen): in, an, auf, über, unter, vor, hinter, neben, zwischen. They take ACCUSATIVE for movement (wohin?), DATIVE for location (wo?). A simple test: can you answer ‘wohin?’ → Akkusativ!”,
+cards:[
+{de:“auf dem Tisch (Dat.) / auf den Tisch (Akk.)”,en:“on the table (location) / onto the table (movement)”,example:“Das Buch liegt auf dem Tisch. Leg es auf den Tisch.”,phonetic:“owf dem TISH / owf den TISH”,tip:“liegt (is lying) = Dativ; leg (put) = Akkusativ”},
+{de:“in der Stadt (Dat.) / in die Stadt (Akk.)”,en:“in the city (location) / into the city (movement)”,example:“Ich bin in der Stadt. / Ich gehe in die Stadt.”,phonetic:“in der shtaht / in dee shtaht”,tip:“THE classic two-way example — memorize it!”},
+{de:“an der Wand (Dat.) / an die Wand (Akk.)”,en:“on the wall (where) / onto the wall (where to)”,example:“Das Bild hängt an der Wand.”,phonetic:“an der vant / an dee vant”,tip:“hängen (hanging) = two meanings: active vs. state”},
+{de:“vor / hinter / neben / zwischen + Dat/Akk”,en:“in front of / behind / next to / between”,example:“Das Café ist neben dem Bahnhof.”,phonetic:“for / HIN-ter / NAY-ben / TSVI-shen”,tip:“neben = next to — very useful!”},
+{de:“durch / für / gegen / ohne / um → AKKUSATIV”,en:“through / for / against / without / around → ACCUSATIVE”,example:“Ich gehe durch den Park. Das ist für dich.”,phonetic:“dooRKH / führ / GAY-gen / OH-neh / oom”,tip:“These 5 ALWAYS take Accusative!”},
+{de:“aus / bei / mit / nach / seit / von / zu → DATIV”,en:“from / at / with / to / since / of / to → DATIVE”,example:“Ich komme aus der Schweiz. Ich fahre mit dem Zug.”,phonetic:“ows / by / mit / nakh / zyte / fon / tsoo”,tip:“These 7 ALWAYS take Dative!”},
+{de:“gegenüber + Dativ (across from)”,en:“across from / opposite”,example:“Das Hotel ist gegenüber dem Bahnhof.”,phonetic:“geh-gen-Ü-ber dem BAHN-hof”,tip:“Can come AFTER the noun: dem Bahnhof gegenüber”},
+{de:“wegen / trotz + Genitiv”,en:“because of / despite + genitive”,example:“Wegen des Regens bin ich zu Hause geblieben.”,phonetic:“VAY-gen / trots + des/der”,tip:“Genitiv: des (m/n) + noun-s, der (f)”},
+{de:“innerhalb / außerhalb + Genitiv”,en:“inside / outside (of) + genitive”,example:“Außerhalb der Stadt ist es ruhiger.”,phonetic:“IN-er-halp / OW-ser-halp + der shtaht”,tip:“Genitive used for spatial relationships”},
+{de:“bis zu / bis nach / bis in”,en:“until / up to / all the way to”,example:“Wir fahren bis nach Berlin.”,phonetic:“bis tsoo / bis nakh / bis in”,tip:“bis nach = for cities, bis zu = for everything else”},
+{de:“statt + Genitiv (instead of)”,en:“instead of + genitive”,example:“Statt des Kaffees trinke ich Tee.”,phonetic:“shtat + des KAF-ays”,tip:“statt des = instead of the (genitive masculine)”},
+{de:“anstatt zu + Infinitiv”,en:“instead of + -ing (infinitive construction)”,example:“Anstatt zu schlafen, lerne ich Deutsch.”,phonetic:“AN-shtat tsoo + in-fee-nee-TEEF”,tip:“Infinitiv construction: zu + infinitive at end”},
+],
+quiz:[
+{q:“Which 5 prepositions ALWAYS take accusative?”,options:[“aus, bei, mit, nach, von”,“durch, für, gegen, ohne, um”,“wegen, trotz, innerhalb”,“an, in, auf, über, unter”],answer:1},
+{q:”‘Das Buch liegt auf ___ Tisch’ (location):”,options:[“den”,“der”,“die”,“dem”],answer:3},
+{q:”‘Wegen des Regens’ — case of ‘Regens’?”,options:[“Nominative”,“Accusative”,“Dative”,“Genitive”],answer:3},
+{q:“Movement uses accusative — test: answer ’***?’”,options:[“Wo?”,“Wohin?”,“Wann?”,“Wie?”],answer:1},
+]
+},
+{ id:“a2_review”, title:“A2 Complete Review”, emoji:“🎓”, color:”#FFD700”,
+story:“You’ve covered A2! Cases, past tenses, modals, conditionals, prepositions, formal writing. Let’s celebrate!”,
+grammar:“A2 checklist: 4 cases ✓, Perfekt & Präteritum ✓, all 6 modals ✓, Konjunktiv II ✓, subordinating conjunctions ✓, two-way prepositions ✓, formal writing ✓, relative clauses ✓. That’s solid A2 — B1 awaits!”,
+cards:[
+{de:“Die 4 Fälle: Nominativ / Akkusativ / Dativ / Genitiv”,en:“The 4 cases — a quick overview”,example:“Der Mann gibt dem Kind einen Apfel.”,phonetic:“noh-mee-nah-TEEF / ah-koo-zah-TEEF / DAH-teef / geh-NEE-teef”,tip:“Who? (Nom) → Whom? (Akk) → To whom? (Dat) → Whose? (Gen)”},
+{de:“Perfekt (sprechen) vs. Präteritum (schreiben)”,en:“Perfekt (speaking) vs. Präteritum (writing)”,example:“Ich habe gegessen (gesprochen) / Ich aß (geschrieben).”,phonetic:“ikh HAH-beh geh-ES-en / ikh ahs”,tip:“Exception: sein/haben use Präteritum even in speech”},
+{de:“Trennbare Verben: Präfix ans Ende!”,en:“Separable verbs: prefix to the end!”,example:“Ich rufe dich an. / Ich stehe um 7 auf.”,phonetic:“ikh ROO-feh dikh an / OWF-shtayn”,tip:“aufstehen, anrufen, einladen, aufmachen, zumachen…”},
+{de:“Modalverben + Infinitiv ans Ende”,en:“Modal verbs + infinitive to end”,example:“Ich kann Deutsch sprechen. Du musst schlafen.”,phonetic:“ikh kan DOYTSH SHPREH-khen”,tip:“6 modals: können/müssen/dürfen/sollen/wollen/mögen”},
+{de:“Nebensatz: Konjunktion → Verb ans Ende”,en:“Subordinate clause: conjunction → verb to end”,example:“Ich weiß, dass du Deutsch lernst.”,phonetic:“ikh vys das doo DOYTSH lernst”,tip:“weil/dass/obwohl/wenn/bevor = verb LAST”},
+{de:“Konjunktiv II: würde/wäre/hätte/könnte”,en:“Subjunctive II: would/would be/would have/could”,example:“Ich würde gerne reisen. Das wäre toll!”,phonetic:“VÜR-deh / VAY-reh / HET-teh / KÖN-teh”,tip:“Use for hypotheticals, wishes, polite requests”},
+{de:“Genus-Tipps: -ung → die, -chen → das, -er → der”,en:“Gender tips from suffixes”,example:“die Wohnung, das Mädchen, der Lehrer”,phonetic:”-oong → dee / -khen → das / -er → der”,tip:”-ung = ALWAYS die. Learn this first!”},
+{de:“Wortstellung: Zeit – Ursache – Art – Ort (TeKaMoLo)”,en:“Word order: Time – Cause – Manner – Place”,example:“Ich fahre morgen (Zeit) mit dem Zug (Art) nach Berlin (Ort).”,phonetic:“TSEH-kah-moh-loh”,tip:“Time comes before Place — always”},
+{de:“Passiv: Das wird gemacht.”,en:“Passive: This is being done.”,example:“Das Formular wird ausgefüllt.”,phonetic:“das virt geh-MAKHT”,tip:“werden + Partizip II = passive voice”},
+{de:“Relativsatz: der/die/das … Verb”,en:“Relative clause: who/which/that”,example:“Das Buch, das ich lese, ist sehr gut.”,phonetic:“das bookh das ikh LAY-zeh ist zayr goot”,tip:“Relative pronoun matches the article of the noun”},
+{de:“Auf zum B1! Ich spreche jetzt A2 Deutsch!”,en:“On to B1! I now speak A2 German!”,example:“Weiter so! Jeden Tag ein bisschen besser!”,phonetic:“owf tsoom bee-YNSS / ikh SHPREH-kheh yetst ah-TSVY DOYTSH”,tip:“Weiter so! = Keep it up! Du schaffst das!”},
+{de:“Herzlichen Glückwunsch! Du hast es geschafft!”,en:“Congratulations! You did it!”,example:“Von Hallo bis Konjunktiv II — beeindruckend!”,phonetic:“HERTS-likh-en GLÜK-voontsh / doo hast es geh-SHAFFT”,tip:“beeindruckend = impressive! And you ARE!”},
+],
+quiz:[
+{q:“TeKaMoLo — which comes LAST?”,options:[“Time”,“Cause”,“Manner”,“Place”],answer:3},
+{q:”’-ung’ suffix = which gender?”,options:[“Der”,“Die”,“Das”,“Varies”],answer:1},
+{q:“Passive voice in German: ___ + Partizip II”,options:[“haben”,“sein”,“werden”,“lassen”],answer:2},
+{q:”‘Du hast es geschafft!’ means:”,options:[“You tried hard!”,“You did it! / You made it!”,“You have a task!”,“You should do it!”],answer:1},
+]
+},
+],
+testQuestions:[
+{q:”‘Je mehr ich übe, desto…’ means:”,options:[“The more I practice, the…”,“When I practice more…”,“Although I practice more…”,“Because I practice more…”],answer:0},
+{q:”‘Ich weiß nicht, ob das stimmt’ — verb goes:”,options:[“Before subject”,“Second position”,“After ‘ob’”,“Last — end of clause”],answer:3},
+{q:”‘Durch’ always takes which case?”,options:[“Dative”,“Genitive”,“Accusative”,“Nominative”],answer:2},
+{q:“Passive voice: ___ + Partizip II”,options:[“haben”,“sein”,“werden”,“lassen”],answer:2},
+{q:”‘lassen + Infinitiv’ means:”,options:[“To allow only”,“To have/let someone do something”,“To prevent”,“To want”],answer:1},
+{q:”‘wegen’ takes which case?”,options:[“Nominative”,“Accusative”,“Dative”,“Genitive”],answer:3},
+{q:“TeKaMoLo — place comes:”,options:[“First”,“Second”,“Third”,“Last”],answer:3},
+{q:”‘als’ (when) refers to a ___ past event:”,options:[“Repeated”,“Single”,“Future”,“Conditional”],answer:1},
+{q:”’-ung’ ALWAYS signals:”,options:[“Der (masculine)”,“Die (feminine)”,“Das (neuter)”,“Depends on word”],answer:1},
+{q:”‘Herzlichen Glückwunsch’ means:”,options:[“Good luck!”,“Happy birthday OR congratulations!”,“Well done!”,“Thank you!”],answer:1},
+]
+},
+];
+
+const SHOP_ITEMS = [
+{ id:“hat_crown”,     name:“Crown”,          emoji:“👑”, type:“hat”,       price:80,  color:”#FFD700” },
+{ id:“hat_wizard”,    name:“Wizard Hat”,     emoji:“🎩”, type:“hat”,       price:120, color:”#A29BFE” },
+{ id:“hat_cap”,       name:“Berlin Cap”,     emoji:“🧢”, type:“hat”,       price:50,  color:”#74B9FF” },
+{ id:“hat_cowboy”,    name:“Cowboy Hat”,     emoji:“🤠”, type:“hat”,       price:90,  color:”#FDCB6E” },
+{ id:“hat_viking”,    name:“Viking Helm”,    emoji:“⛑️”, type:“hat”,       price:150, color:”#FF6B35” },
+{ id:“hat_beanie”,    name:“Beanie”,         emoji:“🪖”, type:“hat”,       price:40,  color:”#636E72” },
+{ id:“weapon_sword”,  name:“Sword”,          emoji:“⚔️”, type:“weapon”,    price:100, color:”#DFE6E9” },
+{ id:“weapon_staff”,  name:“Magic Staff”,    emoji:“🪄”, type:“weapon”,    price:120, color:”#A29BFE” },
+{ id:“weapon_axe”,    name:“Battle Axe”,     emoji:“🪓”, type:“weapon”,    price:90,  color:”#636E72” },
+{ id:“weapon_bow”,    name:“Bow & Arrow”,    emoji:“🏹”, type:“weapon”,    price:110, color:”#A0522D” },
+{ id:“weapon_shield”, name:“Shield”,         emoji:“🛡️”, type:“weapon”,    price:130, color:”#B2BEC3” },
+{ id:“weapon_wurst”,  name:“Wurst Power”,    emoji:“🌭”, type:“weapon”,    price:60,  color:”#E17055” },
+{ id:“outfit_knight”, name:“Knight Armor”,   emoji:“⚜️”, type:“outfit”,    price:200, color:”#B2BEC3” },
+{ id:“outfit_wizard”, name:“Wizard Robe”,    emoji:“🌟”, type:“outfit”,    price:180, color:”#6C5CE7” },
+{ id:“outfit_ninja”,  name:“Ninja Outfit”,   emoji:“🥷”, type:“outfit”,    price:220, color:”#2D3436” },
+{ id:“outfit_royal”,  name:“Royal Robe”,     emoji:“👘”, type:“outfit”,    price:280, color:”#E17055” },
+{ id:“acc_glasses”,   name:“Cool Shades”,    emoji:“🕶️”, type:“accessory”, price:60,  color:”#00CEC9” },
+{ id:“acc_scarf”,     name:“Scarf”,          emoji:“🧣”, type:“accessory”, price:40,  color:”#FF7675” },
+{ id:“acc_wings”,     name:“Angel Wings”,    emoji:“🪽”, type:“accessory”, price:250, color:”#FFEAA7” },
+{ id:“acc_cape”,      name:“Hero Cape”,      emoji:“🦸”, type:“accessory”, price:180, color:”#FF6B35” },
+{ id:“acc_medal”,     name:“Gold Medal”,     emoji:“🥇”, type:“accessory”, price:130, color:”#FFD700” },
+{ id:“acc_pretzel”,   name:“Pretzel Charm”,  emoji:“🥨”, type:“accessory”, price:35,  color:”#A0522D” },
+];
+
+const GEMS_PER_LESSON = 20;
+const GEMS_PERFECT = 15;
+const GEMS_TEST_PASS = 100;
+const GEMS_TEST_FAIL = -60;
+const TEST_TIME = 120;
+const A2_UNLOCK_COST = 400;
+
+function loadState() { try { const s = localStorage.getItem(“deutsch_v8”); if (s) return JSON.parse(s); } catch {} return null; }
+function saveState(s) { try { localStorage.setItem(“deutsch_v8”, JSON.stringify(s)); } catch {} }
+
+const DEFAULT_STATE = {
+gems:80, streak:0,
+completedLessons:{}, weekTestResults:{}, weekUnlocked:{1:true},
+a2Unlocked:false, character:null,
+lastActiveDate: null,
+srs:{},           // spaced repetition data per card
+mistakes:[],      // array of mistake objects
+studyDates:[],    // array of “YYYY-MM-DD” strings for streak calendar
+};
+
+function srsKey(lessonId, cardIdx) { return lessonId + “_” + cardIdx; }
+function srsNext(card, correct) {
+const ef = Math.max(1.3, (card.ef||2.5) + (correct ? 0.1 : -0.3));
+const reps = correct ? (card.reps||0)+1 : 0;
+const interval = correct ? (reps <= 1 ? 1 : reps === 2 ? 3 : Math.round((card.interval||1)*ef)) : 0.5;
+const due = Date.now() + interval*24*60*60*1000;
+return { ef, reps, interval, due };
+}
+function srsDue(srsData, lessonId, cardIdx) {
+const k = srsKey(lessonId, cardIdx);
+if (!srsData[k]) return true; // never seen = due
+return Date.now() >= srsData[k].due;
+}
+function getDueCards(srsData, lessons) {
+const due = [];
+lessons.forEach(lesson => {
+lesson.cards.forEach((card, idx) => {
+if (srsDue(srsData, lesson.id, idx)) due.push({ lesson, card, idx });
+});
+});
+return due;
+}
+function todayStr() { return new Date().toISOString().slice(0,10); }
+
+function CharacterSVG({ gender=“male”, equipped={}, size=160 }) {
+const isFemale = gender===“female”;
+const skinTone=”#FDBCB4”; const hairCol=isFemale?”#7B3F00”:”#2C1810”;
+const outfitItem=equipped.outfit?SHOP_ITEMS.find(i=>i.id===equipped.outfit):null;
+const bodyCol=outfitItem?outfitItem.color:isFemale?”#FF8FAB”:”#4ECDC4”;
+const pantsCol=equipped.outfit===“outfit_ninja”?”#1a1a2e”:isFemale?”#C77DFF”:”#2d3436”;
+return (
+<svg width={size} height={size*1.35} viewBox=“0 0 100 135” style={{overflow:“visible”,display:“block”}}>
+<defs><filter id="csh2"><feDropShadow dx="0" dy="3" stdDeviation="3" floodColor="#00000040"/></filter></defs>
+<g filter="url(#csh2)">
+{equipped.accessory===“acc_cape”&&<path d="M28 64 Q10 100 20 128 L50 115 L80 128 Q90 100 72 64Z" fill="#FF6B35" opacity="0.92"/>}
+{equipped.accessory===“acc_wings”&&<><ellipse cx="18" cy="72" rx="14" ry="22" fill="#FFEAA7" opacity="0.85" transform="rotate(-20 18 72)"/><ellipse cx="82" cy="72" rx="14" ry="22" fill="#FFEAA7" opacity="0.85" transform="rotate(20 82 72)"/></>}
+<rect x="33" y="102" width="14" height="27" rx="7" fill={pantsCol}/>
+<rect x="53" y="102" width="14" height="27" rx="7" fill={pantsCol}/>
+<ellipse cx="40" cy="130" rx="11" ry="5" fill="#1a1a2e"/><ellipse cx="60" cy="130" rx="11" ry="5" fill="#1a1a2e"/>
+<rect x="29" y="62" width="42" height="44" rx="10" fill={bodyCol}/>
+{equipped.outfit===“outfit_knight”&&<><rect x="29" y="62" width="42" height="44" rx="10" fill="#B2BEC3"/><rect x="38" y="68" width="24" height="32" rx="4" fill="#DFE6E9" opacity="0.6"/><line x1="50" y1="68" x2="50" y2="100" stroke="#636E72" strokeWidth="2"/></>}
+{equipped.outfit===“outfit_wizard”&&<><rect x="29" y="62" width="42" height="44" rx="10" fill="#6C5CE7"/><circle cx="50" cy="78" r="6" fill="#A29BFE" opacity="0.7"/><text x="50" y="98" textAnchor="middle" fontSize="10">✨</text></>}
+{equipped.outfit===“outfit_royal”&&<><rect x="29" y="62" width="42" height="44" rx="10" fill="#E17055"/><rect x="38" y="70" width="24" height="4" rx="2" fill="#FFD700" opacity="0.8"/><rect x="38" y="80" width="24" height="4" rx="2" fill="#FFD700" opacity="0.8"/></>}
+<rect x="12" y="64" width="18" height="13" rx="7" fill={bodyCol}/><rect x="70" y="64" width="18" height="13" rx="7" fill={bodyCol}/>
+<circle cx="13" cy="78" r="7" fill={skinTone}/><circle cx="87" cy="78" r="7" fill={skinTone}/>
+{equipped.weapon===“weapon_sword”&&<g transform="translate(87,82) rotate(30)"><rect x="-2" y="0" width="4" height="24" rx="2" fill="#DFE6E9"/><rect x="-7" y="4" width="14" height="3" rx="1.5" fill="#FFD700"/></g>}
+{equipped.weapon===“weapon_staff”&&<g transform="translate(12,50)"><rect x="-2" y="0" width="4" height="36" rx="2" fill="#8B4513"/><circle cx="0" cy="-4" r="7" fill="#A29BFE" opacity="0.9"/></g>}
+{equipped.weapon===“weapon_axe”&&<g transform="translate(87,74) rotate(15)"><rect x="-2" y="0" width="4" height="22" rx="2" fill="#8B4513"/><ellipse cx="0" cy="0" rx="9" ry="7" fill="#636E72"/></g>}
+{equipped.weapon===“weapon_bow”&&<g transform="translate(12,58)"><path d="M0,0 Q-12,16 0,32" stroke="#8B4513" strokeWidth="3" fill="none"/><line x1="0" y1="2" x2="0" y2="30" stroke="#DDD" strokeWidth="1"/></g>}
+{equipped.weapon===“weapon_shield”&&<g transform="translate(12,64)"><path d="M-8,0 L8,0 L10,14 L0,22 L-10,14Z" fill="#B2BEC3"/></g>}
+{equipped.weapon===“weapon_wurst”&&<g transform="translate(87,76)"><ellipse cx="0" cy="8" rx="5" ry="14" fill="#c0392b" transform="rotate(20)"/><ellipse cx="0" cy="0" rx="4" ry="3" fill="#e17055" transform="rotate(20)"/></g>}
+<rect x="43" y="55" width="14" height="12" rx="3" fill={skinTone}/>
+<ellipse cx="50" cy="38" rx="22" ry="23" fill={skinTone}/>
+{isFemale?<><ellipse cx="50" cy="16" rx="23" ry="9" fill={hairCol}/><rect x="28" y="16" width="6" height="28" rx="3" fill={hairCol}/><rect x="66" y="16" width="6" height="28" rx="3" fill={hairCol}/></>:<><ellipse cx="50" cy="16" rx="23" ry="9" fill={hairCol}/><rect x="28" y="16" width="44" height="8" fill={hairCol}/></>}
+<ellipse cx="41" cy="37" rx="4.5" ry="4.5" fill="white"/><ellipse cx="59" cy="37" rx="4.5" ry="4.5" fill="white"/>
+<circle cx="42.5" cy="38" r="3" fill="#1a1a2e"/><circle cx="60.5" cy="38" r="3" fill="#1a1a2e"/>
+<circle cx="43.5" cy="37" r="1.2" fill="white"/><circle cx="61.5" cy="37" r="1.2" fill="white"/>
+{equipped.accessory===“acc_glasses”&&<><rect x="33" y="33" width="14" height="10" rx="5" fill="none" stroke="#00CEC9" strokeWidth="1.8"/><rect x="53" y="33" width="14" height="10" rx="5" fill="none" stroke="#00CEC9" strokeWidth="1.8"/><line x1="47" y1="38" x2="53" y2="38" stroke="#00CEC9" strokeWidth="1.8"/><rect x="33" y="33" width="14" height="10" rx="5" fill="#00CEC9" opacity="0.15"/><rect x="53" y="33" width="14" height="10" rx="5" fill="#00CEC9" opacity="0.15"/></>}
+<path d="M37 29 Q41 26 45 29" stroke={hairCol} strokeWidth="1.8" fill="none" strokeLinecap="round"/>
+<path d="M55 29 Q59 26 63 29" stroke={hairCol} strokeWidth="1.8" fill="none" strokeLinecap="round"/>
+<path d={isFemale?“M44 48 Q50 54 56 48”:“M44 48 Q50 52 56 48”} stroke=”#c0392b” strokeWidth=“2” fill=“none” strokeLinecap=“round”/>
+{isFemale&&<><ellipse cx="36" cy="43" rx="5" ry="3.5" fill="#FFB8B8" opacity="0.45"/><ellipse cx="64" cy="43" rx="5" ry="3.5" fill="#FFB8B8" opacity="0.45"/></>}
+{equipped.accessory===“acc_scarf”&&<path d="M33 58 Q50 65 67 58 Q65 62 50 68 Q35 62 33 58Z" fill="#FF7675" opacity="0.9"/>}
+{equipped.accessory===“acc_medal”&&<><line x1="50" y1="62" x2="50" y2="72" stroke="#FFD700" strokeWidth="2"/><circle cx="50" cy="76" r="6" fill="#FFD700"/><text x="50" y="79" textAnchor="middle" fontSize="7" fill="#000">1</text></>}
+{equipped.accessory===“acc_pretzel”&&<text x="86" y="72" fontSize="14">🥨</text>}
+{equipped.hat===“hat_crown”&&<><rect x="34" y="12" width="32" height="8" rx="2" fill="#FFD700"/><polygon points="34,12 40,2 46,12" fill="#FFD700"/><polygon points="44,12 50,2 56,12" fill="#FFD700"/><polygon points="54,12 60,2 66,12" fill="#FFD700"/><circle cx="40" cy="7" r="2" fill="#FF6B6B"/><circle cx="50" cy="4" r="2" fill="#A29BFE"/><circle cx="60" cy="7" r="2" fill="#4ECDC4"/></>}
+{equipped.hat===“hat_wizard”&&<><ellipse cx="50" cy="16" rx="20" ry="6" fill="#6C5CE7"/><polygon points="50,-10 34,16 66,16" fill="#6C5CE7"/><circle cx="54" cy="8" r="3" fill="#FFEAA7"/></>}
+{equipped.hat===“hat_cap”&&<><ellipse cx="50" cy="16" rx="23" ry="8" fill="#74B9FF"/><ellipse cx="50" cy="14" rx="16" ry="7" fill="#0984e3"/><ellipse cx="66" cy="17" rx="10" ry="4" fill="#74B9FF"/><text x="50" y="17" textAnchor="middle" fontSize="7" fill="white" fontWeight="bold">DE</text></>}
+{equipped.hat===“hat_cowboy”&&<><ellipse cx="50" cy="18" rx="28" ry="5" fill="#FDCB6E"/><path d="M32,18 Q36,6 50,8 Q64,6 68,18" fill="#e17055"/><rect x="30" y="16" width="40" height="4" rx="2" fill="#c0392b"/></>}
+{equipped.hat===“hat_viking”&&<><ellipse cx="50" cy="14" rx="20" ry="10" fill="#636E72"/><ellipse cx="50" cy="12" rx="18" ry="8" fill="#B2BEC3"/><ellipse cx="34" cy="18" rx="5" ry="8" fill="#DFE6E9" transform="rotate(-20 34 18)"/><ellipse cx="66" cy="18" rx="5" ry="8" fill="#DFE6E9" transform="rotate(20 66 18)"/></>}
+{equipped.hat===“hat_beanie”&&<><ellipse cx="50" cy="18" rx="22" ry="10" fill="#636E72"/><ellipse cx="50" cy="12" rx="20" ry="8" fill="#2d3436"/><circle cx="50" cy="8" r="4" fill="#636E72"/></>}
+</g>
+</svg>
+);
+}
+
+function SpeakBtn({ text, size=36, showSlow=false }) {
+const [status, setStatus] = useState(“idle”);
+const [slow, setSlow] = useState(false);
+const ref = useRef(false);
+
+async function handleSpeak(e, forceSlow) {
+e.stopPropagation();
+if (status===“speaking”) { stopAudio(); setStatus(“idle”); ref.current=false; return; }
+const useSlow = forceSlow!==undefined ? forceSlow : slow;
+setStatus(“speaking”); ref.current=true;
+await speak(text, useSlow);
+const dur = Math.max(1600, text.length*(useSlow ? 170 : 90));
+setTimeout(() => { if(ref.current){setStatus(“done”);ref.current=false;setTimeout(()=>setStatus(“idle”),900);} }, dur);
+}
+return (
+<div style={{display:“flex”,alignItems:“center”,gap:4,flexShrink:0}}>
+<button onClick={handleSpeak} title={status===“speaking”?“Stop”:slow?“Listen slowly”:“Listen”} style={{
+width:size,height:size,borderRadius:“50%”,
+border:`1.5px solid ${status==="speaking"?"#FFD700":"#ffffff18"}`,
+cursor:“pointer”,background:status===“speaking”?”#FFD700”:status===“done”?”#4ECDC420”:”#ffffff0a”,
+color:status===“speaking”?”#000”:status===“done”?”#4ECDC4”:”#FFD700”,
+display:“flex”,alignItems:“center”,justifyContent:“center”,
+fontSize:size*0.42,transition:“all 0.2s”,
+boxShadow:status===“speaking”?“0 0 16px #FFD70066”:“none”,position:“relative”,
+}}>
+{status===“speaking”?“⏹”:status===“done”?“✓”:“🔊”}
+{status===“speaking”&&[0,1].map(i=>(
+<span key={i} style={{position:“absolute”,width:size+(i+1)*12,height:size+(i+1)*12,borderRadius:“50%”,border:“1.5px solid #FFD70050”,animation:`ripple 1.1s ease-out ${i*0.35}s infinite`,pointerEvents:“none”}}/>
+))}
+</button>
+{showSlow&&(
+<button onClick={e=>{e.stopPropagation();const ns=!slow;setSlow(ns);if(status!==“speaking”)handleSpeak(e,ns);}}
+style={{fontSize:10,padding:“3px 7px”,borderRadius:8,border:`1px solid ${slow?"#4ECDC4":"#ffffff15"}`,background:slow?”#4ECDC418”:“transparent”,color:slow?”#4ECDC4”:”#555”,cursor:“pointer”,fontWeight:700,whiteSpace:“nowrap”}}>
+{slow?“🐢 slow”:“🐇 fast”}
+</button>
+)}
+</div>
+);
+}
+
+const PHRASEBOOK = [
+{ category:“🆘 Survival”, phrases:[
+{de:“Ich spreche wenig Deutsch.”,en:“I speak little German.”},
+{de:“Bitte sprechen Sie langsamer.”,en:“Please speak more slowly.”},
+{de:“Können Sie das wiederholen?”,en:“Can you repeat that?”},
+{de:“Können Sie das aufschreiben?”,en:“Can you write that down?”},
+{de:“Ich verstehe nicht.”,en:“I don’t understand.”},
+{de:“Wie sagt man … auf Deutsch?”,en:“How do you say … in German?”},
+{de:“Was bedeutet …?”,en:“What does … mean?”},
+{de:“Ich brauche Hilfe!”,en:“I need help!”},
+]},
+{ category:“🍽️ Eating Out”, phrases:[
+{de:“Die Speisekarte, bitte.”,en:“The menu, please.”},
+{de:“Ich möchte bestellen.”,en:“I’d like to order.”},
+{de:“Was empfehlen Sie?”,en:“What do you recommend?”},
+{de:“Ohne Fleisch, bitte.”,en:“Without meat, please.”},
+{de:“Das war sehr lecker!”,en:“That was very tasty!”},
+{de:“Die Rechnung, bitte!”,en:“The bill, please!”},
+{de:“Stimmt so!”,en:“Keep the change!”},
+{de:“Prost! / Zum Wohl!”,en:“Cheers!”},
+]},
+{ category:“🚉 Transport”, phrases:[
+{de:“Wo ist der nächste Bahnhof?”,en:“Where is the nearest train station?”},
+{de:“Eine Fahrkarte nach Berlin, bitte.”,en:“One ticket to Berlin, please.”},
+{de:“Wann fährt der nächste Zug?”,en:“When does the next train leave?”},
+{de:“Auf welchem Gleis?”,en:“On which platform?”},
+{de:“Ist dieser Platz frei?”,en:“Is this seat free?”},
+{de:“Wo muss ich umsteigen?”,en:“Where do I have to change?”},
+{de:“Ich habe mich verfahren.”,en:“I’ve gotten lost (by vehicle).”},
+]},
+{ category:“🏥 Health”, phrases:[
+{de:“Ich bin krank.”,en:“I am sick.”},
+{de:“Ich habe Schmerzen.”,en:“I am in pain.”},
+{de:“Wo ist die nächste Apotheke?”,en:“Where is the nearest pharmacy?”},
+{de:“Ich brauche einen Arzt.”,en:“I need a doctor.”},
+{de:“Notruf: 112”,en:“Emergency: 112”},
+{de:“Ich bin allergisch gegen …”,en:“I am allergic to…”},
+]},
+{ category:“🛍️ Shopping”, phrases:[
+{de:“Wie viel kostet das?”,en:“How much does this cost?”},
+{de:“Das ist zu teuer.”,en:“That’s too expensive.”},
+{de:“Haben Sie das in Größe M?”,en:“Do you have this in size M?”},
+{de:“Kann ich mit Karte zahlen?”,en:“Can I pay by card?”},
+{de:“Haben Sie die Quittung?”,en:“Do you have the receipt?”},
+{de:“Ich möchte das umtauschen.”,en:“I’d like to exchange this.”},
+]},
+{ category:“💬 Small Talk”, phrases:[
+{de:“Wie ist das Wetter bei Ihnen?”,en:“What’s the weather like where you are?”},
+{de:“Woher kommen Sie?”,en:“Where are you from?”},
+{de:“Wie lange lernen Sie schon Deutsch?”,en:“How long have you been learning German?”},
+{de:“Das macht Spaß!”,en:“That’s fun!”},
+{de:“Das ist interessant!”,en:“That’s interesting!”},
+{de:“Ich lerne Deutsch, weil…”,en:“I’m learning German because…”},
+]},
+];
+
+export default function App() {
+const [state, setState] = useState(() => loadState() || DEFAULT_STATE);
+const [screen, setScreen] = useState(() => !loadState()?.character ? “onboarding” : “home”);
+
+const [tab, setTab] = useState(“learn”);
+const [activeTier, setActiveTier] = useState(“A1”);
+
+const [activeLesson, setActiveLesson] = useState(null);
+const [activeWeek, setActiveWeek] = useState(null);
+const [cardIndex, setCardIndex] = useState(0);
+const [cardQueue, setCardQueue] = useState([]);      // SRS queue: [{lesson,card,idx}]
+const [flipped, setFlipped] = useState(false);
+const [showGrammar, setShowGrammar] = useState(false);
+const [cardMode, setCardMode] = useState(“normal”); // “normal”|“reverse”|“srs”
+
+const [quizIndex, setQuizIndex] = useState(0);
+const [selected, setSelected] = useState(null);
+const [quizScore, setQuizScore] = useState(0);
+const [timeLeft, setTimeLeft] = useState(TEST_TIME);
+const [timerActive, setTimerActive] = useState(false);
+
+const [listenOptions, setListenOptions] = useState([]);
+const [listenAnswer, setListenAnswer] = useState(null);
+const [listenSelected, setListenSelected] = useState(null);
+const [listenScore, setListenScore] = useState(0);
+const [listenIndex, setListenIndex] = useState(0);
+const [listenItems, setListenItems] = useState([]);  // [{card,lesson,correctIdx}]
+
+const [toast, setToast] = useState(null);
+const [shopCategory, setShopCategory] = useState(“hat”);
+const [onboardStep, setOnboardStep] = useState(0);
+const [onboardData, setOnboardData] = useState({ name: “”, gender: “male” });
+const [showUnlockA2, setShowUnlockA2] = useState(false);
+const [phraseCategory, setPhraseCategory] = useState(0);
+const [mistakeFilter, setMistakeFilter] = useState(“all”);
+
+const timerRef = useRef(null);
+const touchStartX = useRef(null);
+
+useEffect(() => { saveState(state); }, [state]);
+
+useEffect(() => {
+if (timerActive && timeLeft > 0) { timerRef.current = setTimeout(() => setTimeLeft(t => t-1), 1000); }
+else if (timerActive && timeLeft === 0) { handleTimeUp(); }
+return () => clearTimeout(timerRef.current);
+}, [timerActive, timeLeft]);
+
+useEffect(() => {
+const today = todayStr();
+if (state.lastActiveDate !== today) {
+setState(s => ({
+…s,
+lastActiveDate: today,
+studyDates: […new Set([…(s.studyDates||[]), today])].slice(-365),
+}));
+}
+}, []);
+
+const handleTouchStart = e => { touchStartX.current = e.touches[0].clientX; };
+const handleTouchEnd = e => {
+if (touchStartX.current === null) return;
+const dx = e.changedTouches[0].clientX - touchStartX.current;
+touchStartX.current = null;
+if (Math.abs(dx) < 50) return;
+if (!flipped) { setFlipped(true); return; }
+if (dx < 0) nextCard(true);   // swipe left = knew it
+if (dx > 0) nextCard(false);  // swipe right = didn’t know
+};
+
+const showToast = (msg, color=”#4ECDC4”) => { setToast({msg,color}); setTimeout(()=>setToast(null),2600); };
+const addGems = (amount, reason) => {
+setState(s => ({…s, gems: Math.max(0, s.gems+amount)}));
+showToast(`${amount>0?"+":""}${amount} 💎 ${reason}`, amount>0?”#4ECDC4”:”#FF6B6B”);
+};
+
+const logMistake = (lessonId, cardIdx, card, mode) => {
+const entry = { lessonId, cardIdx, de: card.de, en: card.en, mode, date: todayStr(), id: Date.now() };
+setState(s => ({…s, mistakes: [entry, …(s.mistakes||[])].slice(0,200)}));
+};
+
+const updateSRS = (lessonId, cardIdx, correct) => {
+const k = srsKey(lessonId, cardIdx);
+setState(s => ({
+…s,
+srs: { …s.srs, [k]: srsNext(s.srs[k]||{}, correct) }
+}));
+};
+
+const handleTimeUp = () => {
+setTimerActive(false);
+addGems(GEMS_TEST_FAIL, “time’s up! ⏰”);
+setState(s => ({…s, weekTestResults:{…s.weekTestResults,[activeWeek.id]:{passed:false,score:quizScore,timedOut:true}}}));
+setScreen(“testresult”);
+};
+
+const startLesson = (week, lesson, mode=“normal”) => {
+setActiveLesson(lesson); setActiveWeek(week);
+setCardIndex(0); setFlipped(false); setQuizIndex(0);
+setSelected(null); setQuizScore(0); setShowGrammar(false);
+setCardMode(mode);
+if (mode === “srs”) {
+const allL = […WEEKS_A1, …WEEKS_A2].flatMap(w=>w.lessons)
+.filter(l => state.completedLessons[l.id]);
+const due = getDueCards(state.srs, allL);
+const shuffled = due.sort(()=>Math.random()-0.5).slice(0,20);
+setCardQueue(shuffled);
+}
+setScreen(“lesson”);
+};
+
+const startTest = (week) => {
+setActiveWeek(week); setQuizIndex(0); setSelected(null); setQuizScore(0);
+setTimeLeft(TEST_TIME); setTimerActive(true); setScreen(“weektest”);
+};
+
+const startListening = (lesson, week) => {
+const allCards = lesson.cards;
+const items = allCards.slice().sort(()=>Math.random()-0.5).slice(0,Math.min(10,allCards.length)).map(card => {
+const others = allCards.filter(c=>c!==card).sort(()=>Math.random()-0.5).slice(0,3);
+const opts = […others, card].sort(()=>Math.random()-0.5);
+const correctIdx = opts.indexOf(card);
+return { card, lesson, correctIdx, opts };
+});
+setListenItems(items); setListenIndex(0); setListenScore(0);
+setListenSelected(null); setListenAnswer(null);
+setActiveLesson(lesson); setActiveWeek(week);
+setScreen(“listening”);
+setTimeout(()=>speak(items[0].card.de, false), 400);
+};
+
+const nextCard = (knew) => {
+if (cardMode === “srs”) {
+const current = cardQueue[cardIndex];
+if (current) {
+updateSRS(current.lesson.id, current.idx, knew);
+if (!knew) logMistake(current.lesson.id, current.idx, current.card, “srs”);
+}
+if (cardIndex < cardQueue.length-1) { setCardIndex(i=>i+1); setFlipped(false); }
+else { setScreen(“srscomplete”); }
+return;
+}
+if (cardIndex < activeLesson.cards.length-1) { setCardIndex(i=>i+1); setFlipped(false); }
+else { setQuizIndex(0); setSelected(null); setQuizScore(0); setScreen(“quiz”); }
+};
+
+const handleLessonQuiz = (idx) => {
+if (selected !== null) return;
+setSelected(idx);
+const q = activeLesson.quiz[quizIndex];
+const correct = idx === q.answer;
+if (!correct) logMistake(activeLesson.id, quizIndex, activeLesson.cards[quizIndex] || activeLesson.cards[0], “quiz”);
+const ns = quizScore + (correct?1:0);
+if (quizIndex < activeLesson.cards.length) updateSRS(activeLesson.id, quizIndex, correct);
+setTimeout(() => {
+if (quizIndex < activeLesson.quiz.length-1) { setQuizIndex(i=>i+1); setSelected(null); setQuizScore(ns); }
+else {
+const perfect = ns === activeLesson.quiz.length;
+const alreadyDone = state.completedLessons[activeLesson.id];
+if (!alreadyDone) addGems(GEMS_PER_LESSON+(perfect?GEMS_PERFECT:0), perfect?“perfect! ✨”:“done!”);
+setState(s => ({…s, completedLessons:{…s.completedLessons,[activeLesson.id]:true}, streak:s.streak+(alreadyDone?0:1)}));
+setQuizScore(ns); setScreen(“complete”);
+}
+}, 850);
+};
+
+const handleListening = (idx) => {
+if (listenSelected !== null) return;
+setListenSelected(idx);
+const item = listenItems[listenIndex];
+const correct = idx === item.correctIdx;
+if (!correct) logMistake(item.lesson.id, 0, item.card, “listening”);
+updateSRS(item.lesson.id, listenIndex % item.lesson.cards.length, correct);
+const ns = listenScore + (correct?1:0);
+setTimeout(() => {
+if (listenIndex < listenItems.length-1) {
+setListenIndex(i=>i+1); setListenSelected(null); setListenScore(ns);
+setTimeout(()=>speak(listenItems[listenIndex+1]?.card.de||””,false),300);
+} else {
+showToast(`${ns}/${listenItems.length} correct! 🎧`, “#A29BFE”);
+if (ns >= listenItems.length*0.7) addGems(10, “listening pro! 🎧”);
+setListenScore(ns); setScreen(“listencomplete”);
+}
+}, 900);
+};
+
+const handleWeekTest = (idx) => {
+if (selected !== null) return;
+setSelected(idx);
+const correct = idx === activeWeek.testQuestions[quizIndex].answer;
+const ns = quizScore + (correct?1:0);
+setTimeout(() => {
+if (quizIndex < activeWeek.testQuestions.length-1) { setQuizIndex(i=>i+1); setSelected(null); setQuizScore(ns); }
+else {
+setTimerActive(false);
+const passed = (ns/activeWeek.testQuestions.length) >= 0.7;
+if (passed) { addGems(GEMS_TEST_PASS,“test passed! 🎉”); setState(s=>({…s,weekTestResults:{…s.weekTestResults,[activeWeek.id]:{passed,score:ns}},weekUnlocked:{…s.weekUnlocked,[activeWeek.id+1]:true}})); }
+else { addGems(GEMS_TEST_FAIL,“test failed 😬”); setState(s=>({…s,weekTestResults:{…s.weekTestResults,[activeWeek.id]:{passed,score:ns}}})); }
+setQuizScore(ns); setScreen(“testresult”);
+}
+}, 750);
+};
+
+const unlockA2 = () => {
+if (state.gems < A2_UNLOCK_COST) { showToast(`Need ${A2_UNLOCK_COST} 💎!`,”#FF6B6B”); return; }
+setState(s=>({…s,gems:s.gems-A2_UNLOCK_COST,a2Unlocked:true,weekUnlocked:{…s.weekUnlocked,7:true}}));
+setShowUnlockA2(false); showToast(“A2 Unlocked! 🎓”,”#FFD700”); setActiveTier(“A2”);
+};
+const equipItem = (id) => {
+const item=SHOP_ITEMS.find(i=>i.id===id);
+setState(s=>({…s,character:{…s.character,equipped:{…s.character.equipped,[item.type]:s.character.equipped[item.type]===id?undefined:id}}}));
+};
+const buyItem = (id) => {
+const item=SHOP_ITEMS.find(i=>i.id===id);
+if (state.gems<item.price) { showToast(“Not enough 💎!”,”#FF6B6B”); return; }
+setState(s=>({…s,gems:s.gems-item.price,character:{…s.character,owned:[…(s.character?.owned||[]),id]}}));
+showToast(`Got ${item.name} ${item.emoji}`,item.color);
+};
+const finishOnboarding = () => {
+setState(s=>({…s,character:{name:onboardData.name||“Lerner”,gender:onboardData.gender,equipped:{},owned:[]}}));
+setScreen(“home”);
+};
+
+const char = state.character;
+const allLessons = […WEEKS_A1,…WEEKS_A2].flatMap(w=>w.lessons);
+const doneLessons = allLessons.filter(l=>state.completedLessons[l.id]).length;
+const totalLessons = allLessons.length;
+const timerPct = timeLeft/TEST_TIME;
+const timerColor = timerPct>0.5?”#4ECDC4”:timerPct>0.25?”#FFD700”:”#FF6B6B”;
+const completedLessons = allLessons.filter(l=>state.completedLessons[l.id]);
+const dueCount = getDueCards(state.srs||{}, completedLessons).length;
+const mistakeCount = (state.mistakes||[]).length;
+
+if (screen === “onboarding”) return (
+<div style={{minHeight:“100vh”,background:”#080810”,display:“flex”,alignItems:“center”,justifyContent:“center”,fontFamily:”‘Trebuchet MS’,sans-serif”,color:”#f0f0f0”,padding:20}}>
+<style>{`@keyframes popIn{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}} @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}} @keyframes ripple{0%{transform:scale(1);opacity:0.6}100%{transform:scale(2.5);opacity:0}} *{box-sizing:border-box}`}</style>
+<div style={{width:“100%”,maxWidth:420,animation:“popIn 0.4s ease”}}>
+{onboardStep===0&&(
+<div style={{textAlign:“center”}}>
+<div style={{fontSize:72,animation:“float 3s ease-in-out infinite”,display:“inline-block”}}>🇩🇪</div>
+<div style={{fontSize:32,fontWeight:900,marginTop:12}}>Willkommen!</div>
+<div style={{color:”#888”,marginTop:8,marginBottom:16,fontSize:14,lineHeight:1.9}}>
+<strong style={{color:”#FFD700”}}>6 A1 weeks · 18 lessons · 216+ cards</strong><br/>
++ A2 unlockable · Real neural German audio<br/>
+<span style={{color:”#555”,fontSize:12}}>CEFR-aligned — finish A1 and you’ll be there</span>
+</div>
+<div style={{background:”#0d0d1a”,border:“1px solid #ffffff08”,borderRadius:14,padding:“12px 16px”,marginBottom:20,textAlign:“left”}}>
+{[[“🔁”,“Spaced Repetition”,“Cards you struggle with come back sooner”],[“🎧”,“Listening Mode”,“Hear German, pick what you heard”],[“↩️”,“Reverse Mode”,“See English, recall the German”],[“📊”,“Mistake Tracker”,“Review every card you got wrong”]].map(([icon,name,desc])=>(
+<div key={name} style={{display:“flex”,gap:10,alignItems:“flex-start”,marginBottom:8}}>
+<span style={{fontSize:16,marginTop:1}}>{icon}</span>
+<div><div style={{fontWeight:800,fontSize:12,color:”#fff”}}>{name}</div><div style={{fontSize:11,color:”#555”}}>{desc}</div></div>
+</div>
+))}
+</div>
+<button onClick={()=>setOnboardStep(1)} style={{background:“linear-gradient(135deg,#FFD700,#FF8C00)”,border:“none”,color:”#000”,padding:“16px”,borderRadius:16,fontSize:17,fontWeight:900,cursor:“pointer”,width:“100%”}}>Auf geht’s! →</button>
+</div>
+)}
+{onboardStep===1&&(
+<div>
+<div style={{fontSize:11,color:”#555”,textTransform:“uppercase”,letterSpacing:2,marginBottom:6}}>Step 1 of 2</div>
+<div style={{fontSize:24,fontWeight:900,marginBottom:20}}>Choose your hero</div>
+<div style={{display:“flex”,gap:14,marginBottom:24}}>
+{[“male”,“female”].map(g=>(
+<div key={g} onClick={()=>setOnboardData(d=>({…d,gender:g}))} style={{flex:1,background:onboardData.gender===g?”#FFD70015”:”#0d0d1a”,border:`2px solid ${onboardData.gender===g?"#FFD700":"#1a1a2e"}`,borderRadius:20,padding:20,textAlign:“center”,cursor:“pointer”,transition:“all 0.2s”}}>
+<div style={{display:“flex”,justifyContent:“center”}}><CharacterSVG gender={g} size={100}/></div>
+<div style={{fontWeight:800,color:onboardData.gender===g?”#FFD700”:”#555”,marginTop:8,textTransform:“capitalize”}}>{g}</div>
+</div>
+))}
+</div>
+<button onClick={()=>setOnboardStep(2)} style={{background:“linear-gradient(135deg,#FFD700,#FF8C00)”,border:“none”,color:”#000”,padding:“15px”,borderRadius:14,fontSize:16,fontWeight:900,cursor:“pointer”,width:“100%”}}>Next →</button>
+</div>
+)}
+{onboardStep===2&&(
+<div>
+<div style={{fontSize:11,color:”#555”,textTransform:“uppercase”,letterSpacing:2,marginBottom:6}}>Step 2 of 2</div>
+<div style={{fontSize:24,fontWeight:900,marginBottom:16}}>Name your hero</div>
+<div style={{display:“flex”,justifyContent:“center”,marginBottom:20,animation:“float 3s ease-in-out infinite”}}><CharacterSVG gender={onboardData.gender} size={130}/></div>
+<input value={onboardData.name} onChange={e=>setOnboardData(d=>({…d,name:e.target.value}))} placeholder=“Enter a name…” maxLength={16}
+style={{width:“100%”,background:”#0d0d1a”,border:“2px solid #1a1a2e”,color:”#fff”,padding:“14px 18px”,borderRadius:14,fontSize:18,fontWeight:700,outline:“none”,marginBottom:16,fontFamily:“inherit”}}/>
+<button onClick={finishOnboarding} style={{background:“linear-gradient(135deg,#FFD700,#FF8C00)”,border:“none”,color:”#000”,padding:“15px”,borderRadius:14,fontSize:16,fontWeight:900,cursor:“pointer”,width:“100%”}}>Start Learning! 🚀</button>
+</div>
+)}
+</div>
+</div>
+);
+
+const CSS = `@keyframes popIn{from{transform:scale(0.85);opacity:0}to{transform:scale(1);opacity:1}} @keyframes flipCard{from{transform:rotateY(90deg);opacity:0}to{transform:rotateY(0);opacity:1}} @keyframes shake{0%,100%{transform:translateX(0)}25%,75%{transform:translateX(-6px)}50%{transform:translateX(6px)}} @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-7px)}} @keyframes fadeUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-50px)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.35}} @keyframes twinkle{0%,100%{opacity:0.1}50%{opacity:0.65}} @keyframes glow{0%,100%{box-shadow:0 0 8px #FFD70030}50%{box-shadow:0 0 28px #FFD70090}} @keyframes ripple{0%{transform:scale(1);opacity:0.6}100%{transform:scale(2.5);opacity:0}} @keyframes slideIn{from{transform:translateY(10px);opacity:0}to{transform:translateY(0);opacity:1}} @keyframes correctPop{0%{transform:scale(1)}50%{transform:scale(1.06)}100%{transform:scale(1)}} *{box-sizing:border-box} button{transition:all 0.15s ease} button:active{transform:scale(0.96)!important} ::-webkit-scrollbar{width:4px} ::-webkit-scrollbar-track{background:#0d0d1a} ::-webkit-scrollbar-thumb{background:#2a2a3e;border-radius:2px}`;
+
+return (
+<div style={{minHeight:“100vh”,background:”#080810”,fontFamily:”‘Trebuchet MS’,sans-serif”,color:”#f0f0f0”,display:“flex”,flexDirection:“column”,alignItems:“center”,paddingBottom:88}}>
+<style>{CSS}</style>
+
+```
+  {/* STARFIELD BG */}
+  <div style={{position:"fixed",inset:0,pointerEvents:"none",zIndex:0,overflow:"hidden"}}>
+    <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 15% 15%, #0f0f2e 0%, #080810 55%)"}}/>
+    {Array.from({length:50}).map((_,i)=><div key={i} style={{position:"absolute",width:i%7===0?2.5:1.5,height:i%7===0?2.5:1.5,borderRadius:"50%",background:"#fff",opacity:0.05+Math.random()*0.28,top:`${Math.random()*100}%`,left:`${Math.random()*100}%`,animation:`twinkle ${2+Math.random()*5}s ease-in-out infinite`,animationDelay:`${Math.random()*6}s`}}/>)}
+  </div>
+
+  {/* TOAST */}
+  {toast&&<div style={{position:"fixed",top:70,left:"50%",transform:"translateX(-50%)",background:toast.color,color:"#000",fontWeight:900,padding:"10px 22px",borderRadius:30,fontSize:14,zIndex:999,whiteSpace:"nowrap",animation:"fadeUp 2.6s ease forwards",boxShadow:`0 4px 28px ${toast.color}80`}}>{toast.msg}</div>}
+
+  {/* A2 UNLOCK MODAL */}
+  {showUnlockA2&&(
+    <div style={{position:"fixed",inset:0,background:"#000000cc",zIndex:500,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowUnlockA2(false)}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#0d0d1a",border:"2px solid #FFD70050",borderRadius:24,padding:28,maxWidth:380,width:"100%",textAlign:"center",animation:"popIn 0.3s ease"}}>
+        <div style={{fontSize:52}}>🎓</div>
+        <div style={{fontSize:22,fontWeight:900,marginTop:10}}>Unlock A2 Course</div>
+        <div style={{color:"#888",marginTop:8,lineHeight:1.6,fontSize:14}}>3 more weeks · 9 lessons · Cases, past tense, opinions, conditionals, formal writing</div>
+        <div style={{margin:"18px 0",fontSize:32,fontWeight:900,color:"#FFD700"}}>{A2_UNLOCK_COST} 💎</div>
+        <div style={{fontSize:13,color:state.gems>=A2_UNLOCK_COST?"#4ECDC4":"#FF6B6B",marginBottom:20}}>
+          {state.gems>=A2_UNLOCK_COST?`You have ${state.gems} 💎 ✓`:`You have ${state.gems} 💎 — need ${A2_UNLOCK_COST-state.gems} more`}
+        </div>
+        <div style={{display:"flex",gap:12}}>
+          <button onClick={()=>setShowUnlockA2(false)} style={{flex:1,background:"#111",border:"1px solid #222",color:"#fff",padding:"13px",borderRadius:12,cursor:"pointer",fontWeight:700}}>Cancel</button>
+          <button onClick={unlockA2} disabled={state.gems<A2_UNLOCK_COST} style={{flex:2,background:state.gems>=A2_UNLOCK_COST?"linear-gradient(135deg,#FFD700,#FF8C00)":"#1a1a1a",border:"none",color:state.gems>=A2_UNLOCK_COST?"#000":"#444",padding:"13px",borderRadius:12,cursor:state.gems>=A2_UNLOCK_COST?"pointer":"not-allowed",fontWeight:900,fontSize:15}}>Unlock A2! 🚀</button>
+        </div>
+      </div>
+    </div>
+  )}
+
+  <div style={{width:"100%",maxWidth:500,padding:"0 16px",position:"relative",zIndex:1}}>
+
+    {/* TOP BAR */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0 8px",gap:10}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        {screen!=="home"&&<button onClick={()=>{setTimerActive(false);stopAudio();setScreen("home");}} style={{background:"#ffffff10",border:"1px solid #ffffff15",color:"#fff",padding:"7px 14px",borderRadius:10,cursor:"pointer",fontSize:13,fontWeight:700}}>← Back</button>}
+        {screen==="home"&&char&&(
+          <div style={{display:"flex",alignItems:"center",gap:9}}>
+            <div style={{width:36,height:50,overflow:"hidden",display:"flex",alignItems:"flex-start",justifyContent:"center"}}><CharacterSVG gender={char.gender} equipped={char.equipped} size={36}/></div>
+            <div>
+              <div style={{fontWeight:900,fontSize:15}}>{char.name}</div>
+              <div style={{fontSize:10,color:"#555"}}>{state.a2Unlocked?"A1+A2":"A1 Program"} · {doneLessons}/{totalLessons} lessons</div>
+            </div>
+          </div>
+        )}
+      </div>
+      <div style={{display:"flex",gap:7}}>
+        {state.streak>0&&<div style={{background:"#FF6B3518",border:"1.5px solid #FF6B3535",borderRadius:20,padding:"5px 11px",fontSize:13,fontWeight:800,color:"#FF6B35"}}>🔥{state.streak}</div>}
+        <div style={{display:"flex",alignItems:"center",gap:5,background:"#0d0d1a",border:"1.5px solid #FFD70020",borderRadius:20,padding:"5px 13px"}}>
+          <span style={{fontSize:15}}>💎</span><span style={{fontWeight:900,fontSize:16,color:"#FFD700",fontFamily:"monospace"}}>{state.gems}</span>
+        </div>
+      </div>
+    </div>
+
+    {/* ══════════════════ HOME SCREEN ══════════════════ */}
+    {screen==="home"&&(
+      <>
+        {/* NAV TABS */}
+        <div style={{display:"flex",background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:16,padding:4,marginBottom:16,gap:2}}>
+          {[["learn","📖","Learn"],["practice","⚡","Practice"],["phrasebook","📋","Phrases"],["shop","🛍️","Shop"],["progress","📊","Stats"]].map(([key,icon,label])=>(
+            <button key={key} onClick={()=>setTab(key)} style={{flex:1,padding:"8px 2px",border:"none",cursor:"pointer",borderRadius:12,background:tab===key?"#fff":"transparent",color:tab===key?"#000":"#555",fontWeight:800,fontSize:10,display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+              <span style={{fontSize:15}}>{icon}</span><span>{label}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* ══ LEARN TAB ══ */}
+        {tab==="learn"&&(
+          <>
+            <div style={{display:"flex",gap:10,marginBottom:14}}>
+              <button onClick={()=>setActiveTier("A1")} style={{flex:1,padding:"10px",borderRadius:12,border:`2px solid ${activeTier==="A1"?"#4ECDC4":"#1a1a2e"}`,background:activeTier==="A1"?"#4ECDC415":"#0d0d1a",color:activeTier==="A1"?"#4ECDC4":"#555",fontWeight:900,cursor:"pointer",fontSize:13}}>A1 — Beginner</button>
+              <button onClick={()=>state.a2Unlocked?setActiveTier("A2"):setShowUnlockA2(true)} style={{flex:1,padding:"10px",borderRadius:12,border:`2px solid ${activeTier==="A2"?"#FFD700":"#1a1a2e"}`,background:activeTier==="A2"?"#FFD70015":"#0d0d1a",color:activeTier==="A2"?"#FFD700":"#555",fontWeight:900,cursor:"pointer",fontSize:13}}>
+                {state.a2Unlocked?"A2 — Intermediate":`A2 🔒 ${A2_UNLOCK_COST}💎`}
+              </button>
+            </div>
+            {activeTier==="A1"&&(
+              <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:13,padding:"10px 14px",marginBottom:14}}>
+                <div style={{display:"flex",justifyContent:"space-between",fontSize:11,color:"#555",marginBottom:6}}>
+                  <span style={{fontWeight:800,color:"#888"}}>A1 Progress</span>
+                  <span style={{color:"#FFD700",fontWeight:800}}>{WEEKS_A1.flatMap(w=>w.lessons).filter(l=>state.completedLessons[l.id]).length}/{WEEKS_A1.flatMap(w=>w.lessons).length} lessons</span>
+                </div>
+                <div style={{height:5,background:"#ffffff0d",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${(WEEKS_A1.flatMap(w=>w.lessons).filter(l=>state.completedLessons[l.id]).length/WEEKS_A1.flatMap(w=>w.lessons).length)*100}%`,background:"linear-gradient(90deg,#4ECDC4,#FFD700)",borderRadius:99,transition:"width 0.6s"}}/>
+                </div>
+              </div>
+            )}
+            {(activeTier==="A1"?WEEKS_A1:WEEKS_A2).map(week=>{
+              const unlocked=state.weekUnlocked[week.id];
+              const testResult=state.weekTestResults[week.id];
+              const weekDone=week.lessons.every(l=>state.completedLessons[l.id]);
+              const canTest=weekDone&&unlocked;
+              return(
+                <div key={week.id} style={{background:"#0d0d1a",border:`1.5px solid ${unlocked?"#1a1a2e":"#111"}`,borderRadius:20,marginBottom:12,overflow:"hidden",opacity:unlocked?1:0.45}}>
+                  <div style={{padding:"13px 16px 8px",borderBottom:"1px solid #1a1a2e",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <div style={{width:9,height:9,borderRadius:"50%",background:unlocked?week.color:"#333"}}/>
+                        <span style={{fontWeight:900,fontSize:15,color:unlocked?"#fff":"#444"}}>{week.title} {!unlocked&&"🔒"}</span>
+                      </div>
+                      <div style={{fontSize:10,color:"#555",marginTop:2,marginLeft:17}}>{week.subtitle} · {week.lessons.length} lessons · {week.lessons.reduce((a,l)=>a+l.cards.length,0)} cards</div>
+                    </div>
+                    {testResult&&<div style={{padding:"3px 10px",borderRadius:20,fontSize:11,fontWeight:800,background:testResult.passed?"#4ECDC415":"#FF6B6B15",color:testResult.passed?"#4ECDC4":"#FF6B6B",border:`1px solid ${testResult.passed?"#4ECDC430":"#FF6B6B30"}`}}>{testResult.passed?`✓ ${testResult.score}/10`:`✗ ${testResult.score}/10`}</div>}
+                  </div>
+                  <div style={{padding:"8px 10px"}}>
+                    {week.lessons.map(lesson=>{
+                      const done=state.completedLessons[lesson.id];
+                      return(
+                        <div key={lesson.id} style={{background:done?`${lesson.color}0d`:"#080810",border:`1px solid ${done?lesson.color+"25":"#1a1a2e"}`,borderRadius:12,padding:"10px 12px",marginBottom:6,opacity:unlocked?1:0.5}}>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:34,height:34,borderRadius:9,fontSize:17,background:`${lesson.color}18`,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{lesson.emoji}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontWeight:800,fontSize:13}}>{lesson.title}</div>
+                              <div style={{fontSize:10,color:"#555",marginTop:1}}>{lesson.cards.length} cards</div>
+                            </div>
+                            <div style={{display:"flex",gap:6,flexShrink:0}}>
+                              <button onClick={()=>unlocked&&startLesson(week,lesson,"normal")} disabled={!unlocked} style={{background:done?`${lesson.color}20`:lesson.color,border:"none",color:done?lesson.color:"#000",padding:"6px 11px",borderRadius:9,cursor:unlocked?"pointer":"default",fontSize:11,fontWeight:800}}>
+                                {done?"↩️ Redo":"▶ Start"}
+                              </button>
+                              {done&&<button onClick={()=>startLesson(week,lesson,"reverse")} style={{background:"#6C5CE715",border:"1px solid #6C5CE740",color:"#A29BFE",padding:"6px 10px",borderRadius:9,cursor:"pointer",fontSize:11,fontWeight:800}} title="Reverse mode: see English, recall German">↩️EN→DE</button>}
+                              {done&&<button onClick={()=>startListening(lesson,week)} style={{background:"#A29BFE15",border:"1px solid #A29BFE30",color:"#A29BFE",padding:"6px 10px",borderRadius:9,cursor:"pointer",fontSize:11,fontWeight:800}} title="Listening quiz">🎧</button>}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <button onClick={()=>canTest&&startTest(week)} disabled={!canTest}
+                      style={{width:"100%",padding:"12px",background:canTest?`linear-gradient(135deg,${week.color}dd,${week.color}88)`:"#111",border:canTest?"none":"1.5px dashed #1a1a2e",borderRadius:12,cursor:canTest?"pointer":"not-allowed",color:canTest?"#000":"#333",fontWeight:900,fontSize:12,display:"flex",alignItems:"center",justifyContent:"center",gap:8,animation:canTest&&!testResult?"glow 2.5s infinite":"none"}}>
+                      {!unlocked?"🔒 Complete previous week first":!weekDone?`🔒 Complete all ${week.lessons.length} lessons first`:`⏱️ WEEK TEST — 120s · Pass for +${GEMS_TEST_PASS}💎`}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </>
+        )}
+
+        {/* ══ PRACTICE TAB ══ */}
+        {tab==="practice"&&(
+          <div style={{animation:"popIn 0.3s ease"}}>
+            <div style={{fontWeight:900,fontSize:18,marginBottom:6}}>⚡ Practice Modes</div>
+            <div style={{fontSize:12,color:"#555",marginBottom:16}}>Extra study modes for deeper retention.</div>
+
+            {/* SRS Review */}
+            <div style={{background:"#0d0d1a",border:`1.5px solid ${dueCount>0?"#FFD70040":"#1a1a2e"}`,borderRadius:18,padding:"16px",marginBottom:12,animation:dueCount>0?"glow 3s infinite":"none"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                <div>
+                  <div style={{fontWeight:900,fontSize:16,display:"flex",alignItems:"center",gap:8}}>🔁 Spaced Repetition<span style={{fontSize:11,background:dueCount>0?"#FFD70020":"#ffffff0a",color:dueCount>0?"#FFD700":"#444",padding:"2px 8px",borderRadius:20,fontWeight:800}}>{dueCount} due</span></div>
+                  <div style={{fontSize:12,color:"#555",marginTop:3}}>SM-2 algorithm · Cards you struggle with come back sooner</div>
+                </div>
+              </div>
+              {completedLessons.length===0?(
+                <div style={{fontSize:12,color:"#333",padding:"8px 0"}}>Complete at least one lesson first to start SRS review.</div>
+              ):(
+                <button onClick={()=>startLesson(null,completedLessons[0],"srs")} style={{width:"100%",background:dueCount>0?"linear-gradient(135deg,#FFD700,#FF8C00)":"#111",border:"none",color:dueCount>0?"#000":"#444",padding:"13px",borderRadius:12,cursor:dueCount>0?"pointer":"not-allowed",fontWeight:900,fontSize:14}}>
+                  {dueCount>0?`Review ${dueCount} due card${dueCount!==1?"s":""}! 🔁`:"All caught up! ✓ Come back later"}
+                </button>
+              )}
+            </div>
+
+            {/* Mistake Review */}
+            <div style={{background:"#0d0d1a",border:`1.5px solid ${mistakeCount>0?"#FF6B6B30":"#1a1a2e"}`,borderRadius:18,padding:"16px",marginBottom:12}}>
+              <div style={{fontWeight:900,fontSize:16,marginBottom:4,display:"flex",alignItems:"center",gap:8}}>📊 Mistake Tracker<span style={{fontSize:11,background:mistakeCount>0?"#FF6B6B18":"#ffffff0a",color:mistakeCount>0?"#FF6B6B":"#444",padding:"2px 8px",borderRadius:20,fontWeight:800}}>{mistakeCount}</span></div>
+              <div style={{fontSize:12,color:"#555",marginBottom:10}}>Every card & quiz question you got wrong, saved for review.</div>
+              {mistakeCount===0?(
+                <div style={{fontSize:12,color:"#333",padding:"4px 0"}}>No mistakes yet — keep learning!</div>
+              ):(
+                <button onClick={()=>setTab("mistakes")} style={{width:"100%",background:"#FF6B6B18",border:"1px solid #FF6B6B30",color:"#FF6B6B",padding:"12px",borderRadius:12,cursor:"pointer",fontWeight:900,fontSize:13}}>Review Mistakes →</button>
+              )}
+            </div>
+
+            {/* Mode cards */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+              {[
+                {icon:"↩️",name:"Reverse Mode",desc:"English → German recall",color:"#6C5CE7",info:"Available on each completed lesson"},
+                {icon:"🎧",name:"Listening Quiz",desc:"Hear it, identify it",color:"#A29BFE",info:"Available on each completed lesson"},
+              ].map(m=>(
+                <div key={m.name} style={{background:"#0d0d1a",border:`1px solid ${m.color}25`,borderRadius:15,padding:"14px 12px"}}>
+                  <div style={{fontSize:28,marginBottom:6}}>{m.icon}</div>
+                  <div style={{fontWeight:900,fontSize:13,color:"#fff",marginBottom:3}}>{m.name}</div>
+                  <div style={{fontSize:11,color:"#555",marginBottom:6,lineHeight:1.5}}>{m.desc}</div>
+                  <div style={{fontSize:10,color:m.color}}>{m.info}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Quick stats about SRS */}
+            {completedLessons.length>0&&(
+              <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:14,padding:"12px 14px"}}>
+                <div style={{fontWeight:800,fontSize:11,color:"#444",textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>SRS Overview</div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+                  {[
+                    {label:"Due",val:dueCount,color:"#FFD700"},
+                    {label:"Learned",val:Object.keys(state.srs||{}).length,color:"#4ECDC4"},
+                    {label:"Mistakes",val:mistakeCount,color:"#FF6B6B"},
+                  ].map(s=>(
+                    <div key={s.label} style={{textAlign:"center",background:"#080810",borderRadius:10,padding:"10px 6px"}}>
+                      <div style={{fontSize:20,fontWeight:900,color:s.color}}>{s.val}</div>
+                      <div style={{fontSize:10,color:"#444",marginTop:2}}>{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══ MISTAKES TAB ══ */}
+        {tab==="mistakes"&&(
+          <div style={{animation:"popIn 0.3s ease"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <div style={{fontWeight:900,fontSize:18}}>📊 Mistakes</div>
+              <div style={{display:"flex",gap:6}}>
+                {["all","quiz","listening","srs"].map(f=>(
+                  <button key={f} onClick={()=>setMistakeFilter(f)} style={{background:mistakeFilter===f?"#FF6B6B":"#0d0d1a",border:`1px solid ${mistakeFilter===f?"#FF6B6B":"#1a1a2e"}`,color:mistakeFilter===f?"#fff":"#555",padding:"5px 10px",borderRadius:20,cursor:"pointer",fontWeight:700,fontSize:10,textTransform:"capitalize"}}>{f}</button>
+                ))}
+              </div>
+            </div>
+            {(state.mistakes||[]).length===0?(
+              <div style={{textAlign:"center",padding:"40px 20px",color:"#333"}}>
+                <div style={{fontSize:48,marginBottom:12}}>🎯</div>
+                <div style={{fontWeight:800,fontSize:16,marginBottom:6}}>No mistakes yet!</div>
+                <div style={{fontSize:13}}>Keep learning — mistakes you make will appear here for review.</div>
+              </div>
+            ):(
+              <>
+                <div style={{fontSize:12,color:"#555",marginBottom:12}}>{(state.mistakes||[]).filter(m=>mistakeFilter==="all"||m.mode===mistakeFilter).length} mistake{(state.mistakes||[]).filter(m=>mistakeFilter==="all"||m.mode===mistakeFilter).length!==1?"s":""}</div>
+                {(state.mistakes||[]).filter(m=>mistakeFilter==="all"||m.mode===mistakeFilter).map((m,i)=>(
+                  <div key={m.id||i} style={{background:"#0d0d1a",border:"1px solid #FF6B6B18",borderRadius:14,padding:"12px 14px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:10}}>
+                    <div style={{flex:1}}>
+                      <div style={{fontWeight:800,fontSize:14,marginBottom:2}}>{m.de}</div>
+                      <div style={{fontSize:12,color:"#555",marginBottom:4}}>{m.en}</div>
+                      <div style={{display:"flex",gap:6}}>
+                        <span style={{fontSize:10,color:"#FF6B6B",background:"#FF6B6B12",padding:"2px 8px",borderRadius:10}}>{m.mode}</span>
+                        <span style={{fontSize:10,color:"#333"}}>{m.date}</span>
+                      </div>
+                    </div>
+                    <SpeakBtn text={m.de} size={34} showSlow={true}/>
+                  </div>
+                ))}
+                <button onClick={()=>setState(s=>({...s,mistakes:[]}))} style={{width:"100%",marginTop:8,background:"#FF6B6B10",border:"1px solid #FF6B6B25",color:"#FF6B6B",padding:"11px",borderRadius:12,cursor:"pointer",fontWeight:700,fontSize:12}}>Clear All Mistakes</button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ══ PHRASEBOOK TAB ══ */}
+        {tab==="phrasebook"&&(
+          <div style={{animation:"popIn 0.3s ease"}}>
+            <div style={{fontWeight:900,fontSize:18,marginBottom:12}}>📋 Phrasebook</div>
+            <div style={{display:"flex",gap:7,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+              {PHRASEBOOK.map((cat,i)=>(
+                <button key={i} onClick={()=>setPhraseCategory(i)} style={{background:phraseCategory===i?"#FFD700":"#0d0d1a",border:`1px solid ${phraseCategory===i?"#FFD700":"#1a1a2e"}`,color:phraseCategory===i?"#000":"#666",padding:"7px 13px",borderRadius:30,cursor:"pointer",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>{cat.category}</button>
+              ))}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {PHRASEBOOK[phraseCategory].phrases.map((p,i)=>(
+                <div key={i} style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:14,padding:"12px 14px",display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:800,fontSize:14,marginBottom:3}}>{p.de}</div>
+                    <div style={{fontSize:12,color:"#555"}}>{p.en}</div>
+                  </div>
+                  <SpeakBtn text={p.de} size={34} showSlow={true}/>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ══ SHOP TAB ══ */}
+        {tab==="shop"&&char&&(
+          <div style={{animation:"popIn 0.3s ease"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{fontWeight:900,fontSize:18}}>🛍️ Item Shop</div>
+              <div style={{display:"flex",alignItems:"center",gap:5,background:"#0d0d1a",border:"1px solid #FFD70020",borderRadius:20,padding:"5px 13px"}}><span>💎</span><span style={{fontWeight:900,color:"#FFD700"}}>{state.gems}</span></div>
+            </div>
+            <div style={{display:"flex",gap:7,marginBottom:12,overflowX:"auto",paddingBottom:4}}>
+              {[["hat","🎩"],["weapon","⚔️"],["outfit","👘"],["accessory","✨"]].map(([key,icon])=>(
+                <button key={key} onClick={()=>setShopCategory(key)} style={{background:shopCategory===key?"#FFD700":"#0d0d1a",border:`1px solid ${shopCategory===key?"#FFD700":"#1a1a2e"}`,color:shopCategory===key?"#000":"#666",padding:"7px 14px",borderRadius:30,cursor:"pointer",fontWeight:800,fontSize:12,whiteSpace:"nowrap"}}>{icon} {key.charAt(0).toUpperCase()+key.slice(1)}s</button>
+              ))}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {SHOP_ITEMS.filter(i=>i.type===shopCategory).map(item=>{
+                const owned=char.owned?.includes(item.id),isEq=char.equipped[item.type]===item.id;
+                return(<div key={item.id} style={{background:owned?`${item.color}0e`:"#0d0d1a",border:`1.5px solid ${isEq?item.color:owned?item.color+"28":"#1a1a2e"}`,borderRadius:17,padding:"15px 12px",textAlign:"center",position:"relative"}}>
+                  {isEq&&<div style={{position:"absolute",top:8,right:8,width:7,height:7,borderRadius:"50%",background:item.color,boxShadow:`0 0 6px ${item.color}`}}/>}
+                  <div style={{fontSize:36,marginBottom:6}}>{item.emoji}</div>
+                  <div style={{fontWeight:800,fontSize:12,marginBottom:3}}>{item.name}</div>
+                  <div style={{color:"#FFD700",fontWeight:900,fontSize:12,marginBottom:8}}>{item.price} 💎</div>
+                  {owned?<button onClick={()=>equipItem(item.id)} style={{width:"100%",background:isEq?`${item.color}20`:"#111",border:`1px solid ${isEq?item.color:"#222"}`,color:isEq?item.color:"#aaa",padding:"7px",borderRadius:10,cursor:"pointer",fontWeight:800,fontSize:11}}>{isEq?"Equipped ✓":"Equip"}</button>
+                  :<button onClick={()=>buyItem(item.id)} style={{width:"100%",background:state.gems>=item.price?`linear-gradient(135deg,${item.color},${item.color}aa)`:"#111",border:"none",color:state.gems>=item.price?"#000":"#444",padding:"7px",borderRadius:10,cursor:state.gems>=item.price?"pointer":"not-allowed",fontWeight:900,fontSize:11}}>{state.gems>=item.price?"Buy":"Need 💎"}</button>}
+                </div>);
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ══ STATS/PROGRESS TAB ══ */}
+        {tab==="progress"&&(
+          <div style={{animation:"popIn 0.3s ease"}}>
+            {/* Character mini */}
+            {char&&<div style={{display:"flex",gap:14,alignItems:"center",background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:18,padding:"14px",marginBottom:14}}>
+              <div style={{animation:"float 3s ease-in-out infinite",flexShrink:0}}><CharacterSVG gender={char.gender} equipped={char.equipped} size={80}/></div>
+              <div>
+                <div style={{fontWeight:900,fontSize:17}}>{char.name}</div>
+                <div style={{fontSize:12,color:"#555",marginTop:2}}>Level {Math.floor(doneLessons/3)+1}</div>
+                <div style={{display:"flex",gap:6,marginTop:8,flexWrap:"wrap"}}>
+                  {[["💎",state.gems],["🔥",state.streak],["✅",doneLessons]].map(([icon,val])=>(
+                    <div key={icon} style={{background:"#ffffff08",borderRadius:8,padding:"4px 9px",fontSize:12,fontWeight:800}}>{icon} {val}</div>
+                  ))}
+                </div>
+              </div>
+            </div>}
+
+            {/* Streak Calendar */}
+            <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:16,padding:"14px",marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:11,color:"#444",textTransform:"uppercase",letterSpacing:2,marginBottom:10}}>Study Calendar — Last 5 Weeks</div>
+              {(()=>{
+                const days=["S","M","T","W","T","F","S"];
+                const today=new Date(); today.setHours(0,0,0,0);
+                // Find the most recent Sunday as the start of the current week
+                const todayDow=today.getDay(); // 0=Sun,1=Mon,...,6=Sat
+                const cells=[];
+                // Build 35 cells: 5 weeks starting from 4 Sundays ago
+                const startDate=new Date(today);
+                startDate.setDate(today.getDate()-todayDow-(4*7)); // go back to 4 Sundays ago
+                for(let i=0;i<35;i++){
+                  const date=new Date(startDate);
+                  date.setDate(startDate.getDate()+i);
+                  const str=date.toISOString().slice(0,10);
+                  const studied=(state.studyDates||[]).includes(str);
+                  const isToday=str===todayStr();
+                  cells.push({str,studied,isToday});
+                }
+                return(
+                  <div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:4}}>
+                      {days.map((d,i)=><div key={i} style={{textAlign:"center",fontSize:9,color:"#333",fontWeight:700}}>{d}</div>)}
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+                      {cells.map((c,i)=>(
+                        <div key={i} style={{aspectRatio:"1",borderRadius:5,background:c.studied?"#4ECDC4":c.isToday?"#ffffff12":"#ffffff07",border:c.isToday?"1px solid #4ECDC460":"1px solid transparent",transition:"all 0.2s"}} title={c.str}/>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Week progress bars */}
+            {[...WEEKS_A1,...(state.a2Unlocked?WEEKS_A2:[])].map(w=>{
+              const r=state.weekTestResults[w.id],dc=w.lessons.filter(l=>state.completedLessons[l.id]).length;
+              return(<div key={w.id} style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:13,padding:"11px 14px",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
+                  <div style={{display:"flex",alignItems:"center",gap:7}}>
+                    <div style={{width:7,height:7,borderRadius:"50%",background:w.color}}/>
+                    <span style={{fontWeight:800,fontSize:12}}>{w.title}</span>
+                    <span style={{color:"#555",fontSize:11}}>{w.subtitle}</span>
+                  </div>
+                  {r?<span style={{fontSize:11,fontWeight:800,color:r.passed?"#4ECDC4":"#FF6B6B"}}>{r.passed?"✓":"✗"} {r.score}/10</span>:<span style={{fontSize:11,color:"#333"}}>{state.weekUnlocked[w.id]?"":"🔒"}</span>}
+                </div>
+                <div style={{height:4,background:"#ffffff08",borderRadius:99,overflow:"hidden"}}>
+                  <div style={{height:"100%",width:`${(dc/w.lessons.length)*100}%`,background:`linear-gradient(90deg,${w.color},${w.color}66)`,borderRadius:99,transition:"width 0.5s"}}/>
+                </div>
+                <div style={{fontSize:10,color:"#333",marginTop:3}}>{dc}/{w.lessons.length} lessons · {w.lessons.reduce((a,l)=>a+l.cards.length,0)} cards</div>
+              </div>);
+            })}
+          </div>
+        )}
+      </>
+    )}
+
+    {/* ══════════════════ LESSON CARDS ══════════════════ */}
+    {screen==="lesson"&&(activeLesson||cardMode==="srs")&&(()=>{
+      const isSRS = cardMode==="srs";
+      const isReverse = cardMode==="reverse";
+      const currentCard = isSRS ? cardQueue[cardIndex]?.card : activeLesson?.cards[cardIndex];
+      const currentLesson = isSRS ? cardQueue[cardIndex]?.lesson : activeLesson;
+      const currentIdx = isSRS ? cardQueue[cardIndex]?.idx : cardIndex;
+      const total = isSRS ? cardQueue.length : activeLesson?.cards.length;
+      if (!currentCard) return null;
+      const lessonColor = currentLesson?.color || "#4ECDC4";
+
+      return(
+        <div style={{paddingTop:8,animation:"popIn 0.3s ease"}}>
+          {/* Mode badge */}
+          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8}}>
+            {isSRS&&<span style={{fontSize:11,background:"#FFD70020",color:"#FFD700",padding:"3px 10px",borderRadius:20,fontWeight:800}}>🔁 SRS Review</span>}
+            {isReverse&&<span style={{fontSize:11,background:"#6C5CE720",color:"#A29BFE",padding:"3px 10px",borderRadius:20,fontWeight:800}}>↩️ Reverse: EN→DE</span>}
+            {!isSRS&&!isReverse&&<span style={{fontSize:11,background:`${lessonColor}18`,color:lessonColor,padding:"3px 10px",borderRadius:20,fontWeight:800}}>{currentLesson?.title}</span>}
+          </div>
+
+          {/* Story + Grammar (normal mode only) */}
+          {!isSRS&&activeLesson?.story&&(
+            <div style={{background:`${lessonColor}0e`,border:`1px solid ${lessonColor}20`,borderRadius:12,padding:"9px 13px",marginBottom:10}}>
+              <div style={{fontSize:11,color:"#888",fontStyle:"italic",lineHeight:1.6,marginBottom:activeLesson.grammar?5:0}}>📖 {activeLesson.story}</div>
+              {activeLesson.grammar&&(
+                <>
+                  <button onClick={()=>setShowGrammar(g=>!g)} style={{fontSize:10,color:lessonColor,background:"transparent",border:`1px solid ${lessonColor}35`,borderRadius:7,padding:"2px 9px",cursor:"pointer",fontWeight:700}}>
+                    {showGrammar?"▲ Hide grammar":"▼ Grammar note"}
+                  </button>
+                  {showGrammar&&<div style={{marginTop:7,fontSize:11,color:"#bbb",lineHeight:1.7,background:"#ffffff06",borderRadius:8,padding:"7px 11px",animation:"slideIn 0.2s ease"}}>📚 {activeLesson.grammar}</div>}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Progress bar */}
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+            <div style={{flex:1,height:4,background:"#ffffff0d",borderRadius:99,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${(cardIndex/total)*100}%`,background:lessonColor,borderRadius:99,transition:"width 0.3s"}}/>
+            </div>
+            <span style={{fontSize:10,color:"#444",fontWeight:700,minWidth:36,textAlign:"right"}}>{cardIndex+1}/{total}</span>
+          </div>
+
+          {/* FLASHCARD — touch/swipe enabled */}
+          <div
+            onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}
+            onClick={()=>setFlipped(f=>!f)}
+            style={{
+              background:flipped?`${lessonColor}0e`:"#0d0d1a",
+              border:`2px solid ${flipped?lessonColor+"40":"#1a1a2e"}`,
+              borderRadius:22,padding:"26px 20px",minHeight:270,cursor:"pointer",
+              display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+              textAlign:"center",gap:10,transition:"all 0.2s",
+              animation:"flipCard 0.2s ease",userSelect:"none",
+              boxShadow:flipped?`0 0 45px ${lessonColor}10`:"0 8px 40px #00000055",
+            }}>
+            {!flipped?(
+              <>
+                <div style={{fontSize:9,color:"#333",letterSpacing:3,textTransform:"uppercase"}}>{isReverse?"English":"Deutsch"}</div>
+                <div style={{fontSize:28,fontWeight:900,color:"#fff",lineHeight:1.35}}>{isReverse?currentCard.en:currentCard.de}</div>
+                {!isReverse&&currentCard.phonetic&&<div style={{fontSize:11,color:"#333",fontStyle:"italic"}}>/{currentCard.phonetic}/</div>}
+                {!isReverse&&<div style={{marginTop:4}}><SpeakBtn text={currentCard.de} size={38} showSlow={true}/></div>}
+                <div style={{fontSize:10,color:"#222",marginTop:4}}>{isSRS?"tap · swipe left = knew it · swipe right = missed it":"tap to reveal"}</div>
+              </>
+            ):(
+              <>
+                <div style={{fontSize:9,color:lessonColor,letterSpacing:3,textTransform:"uppercase",fontWeight:800}}>{isReverse?"Deutsch":"English"}</div>
+                <div style={{fontSize:21,fontWeight:900,color:"#fff",lineHeight:1.4}}>{isReverse?currentCard.de:currentCard.en}</div>
+                {isReverse&&currentCard.phonetic&&<div style={{fontSize:11,color:"#444",fontStyle:"italic"}}>/{currentCard.phonetic}/</div>}
+                {isReverse&&<div style={{marginTop:4}}><SpeakBtn text={currentCard.de} size={36} showSlow={true}/></div>}
+                <div style={{background:"#ffffff06",border:"1px solid #ffffff0e",borderRadius:12,padding:"9px 13px",width:"100%",display:"flex",alignItems:"flex-start",gap:9}}>
+                  <div style={{flex:1,fontSize:12,color:"#888",fontStyle:"italic",lineHeight:1.6,textAlign:"left"}}>"{currentCard.example}"</div>
+                  <SpeakBtn text={currentCard.example} size={30} showSlow={true}/>
+                </div>
+                <div style={{background:`${lessonColor}0c`,border:`1px solid ${lessonColor}20`,borderRadius:9,padding:"6px 12px",fontSize:11,color:"#777",width:"100%",textAlign:"left"}}>💡 {currentCard.tip}</div>
+              </>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          {flipped&&(
+            isSRS?(
+              <div style={{display:"flex",gap:10,marginTop:12,animation:"popIn 0.2s ease"}}>
+                <button onClick={()=>nextCard(false)} style={{flex:1,background:"#FF6B6B18",border:"1.5px solid #FF6B6B40",color:"#FF6B6B",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:14,fontWeight:900}}>✗ Missed</button>
+                <button onClick={()=>nextCard(true)} style={{flex:1,background:"#4ECDC418",border:"1.5px solid #4ECDC440",color:"#4ECDC4",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:14,fontWeight:900}}>✓ Knew it</button>
+              </div>
+            ):(
+              <button onClick={()=>nextCard(true)} style={{width:"100%",marginTop:12,background:lessonColor,border:"none",color:"#000",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:15,fontWeight:900,animation:"popIn 0.2s ease"}}>
+                {cardIndex<total-1?"Next Card →":isReverse?"Done! ✓":"Quiz Time! 🎯"}
+              </button>
+            )
+          )}
+        </div>
+      );
+    })()}
+
+    {/* ══════════════════ LESSON QUIZ ══════════════════ */}
+    {screen==="quiz"&&activeLesson&&(
+      <div style={{paddingTop:10,animation:"popIn 0.3s ease"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <span style={{fontWeight:900,fontSize:16}}>Quiz 🎯</span>
+          <div style={{flex:1,height:4,background:"#ffffff0d",borderRadius:99,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${(quizIndex/activeLesson.quiz.length)*100}%`,background:activeLesson.color,borderRadius:99,transition:"width 0.3s"}}/>
+          </div>
+          <span style={{fontSize:10,color:"#444"}}>{quizIndex+1}/{activeLesson.quiz.length}</span>
+        </div>
+        <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:18,padding:"16px",marginBottom:12}}>
+          <div style={{fontSize:15,fontWeight:800,lineHeight:1.5}}>{activeLesson.quiz[quizIndex].q}</div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          {activeLesson.quiz[quizIndex].options.map((opt,i)=>{
+            const isCorrect=i===activeLesson.quiz[quizIndex].answer,isSelected=selected===i;
+            let bg="#0d0d1a",border="#1a1a2e",color="#f0f0f0",anim="none";
+            if(selected!==null){
+              if(isCorrect){bg="#4ECDC415";border="#4ECDC4";color="#4ECDC4";if(isSelected)anim="correctPop 0.4s ease";}
+              else if(isSelected){bg="#FF6B6B15";border="#FF6B6B";color="#FF6B6B";anim="shake 0.4s ease";}
+            }
+            return(
+              <button key={i} onClick={()=>handleLessonQuiz(i)} style={{background:bg,border:`1.5px solid ${border}`,borderRadius:12,padding:"13px 15px",color,fontSize:14,fontWeight:600,cursor:selected===null?"pointer":"default",textAlign:"left",display:"flex",alignItems:"center",gap:10,animation:anim}}>
+                <span style={{width:24,height:24,borderRadius:"50%",background:"#ffffff07",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>
+                  {selected!==null?(isCorrect?"✓":isSelected?"✗":["A","B","C","D"][i]):["A","B","C","D"][i]}
+                </span>
+                <span style={{flex:1}}>{opt}</span>
+                {opt.match(/[äöüÄÖÜß]/)&&<span onClick={e=>{e.stopPropagation();speak(opt);}} style={{fontSize:12,opacity:0.3,cursor:"pointer"}}>🔊</span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    )}
+
+    {/* ══════════════════ LISTENING QUIZ ══════════════════ */}
+    {screen==="listening"&&listenItems.length>0&&(()=>{
+      const item=listenItems[listenIndex];
+      return(
+        <div style={{paddingTop:10,animation:"popIn 0.3s ease"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+            <span style={{fontWeight:900,fontSize:16}}>🎧 Listening Quiz</span>
+            <div style={{flex:1,height:4,background:"#ffffff0d",borderRadius:99,overflow:"hidden"}}>
+              <div style={{height:"100%",width:`${(listenIndex/listenItems.length)*100}%`,background:"#A29BFE",borderRadius:99,transition:"width 0.3s"}}/>
+            </div>
+            <span style={{fontSize:10,color:"#444"}}>{listenIndex+1}/{listenItems.length}</span>
+          </div>
+          {/* Big play button */}
+          <div style={{background:"#0d0d1a",border:"1.5px solid #A29BFE30",borderRadius:22,padding:"30px 20px",textAlign:"center",marginBottom:14}}>
+            <div style={{fontSize:12,color:"#555",marginBottom:12,letterSpacing:2,textTransform:"uppercase"}}>What did you hear?</div>
+            <button onClick={()=>speak(item.card.de,false)} style={{width:72,height:72,borderRadius:"50%",background:"linear-gradient(135deg,#A29BFE,#6C5CE7)",border:"none",fontSize:28,cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 10px",boxShadow:"0 4px 24px #A29BFE40"}}>🔊</button>
+            <div style={{fontSize:11,color:"#444"}}>Tap to replay</div>
+            <div style={{marginTop:10,display:"flex",justifyContent:"center",gap:8}}>
+              <button onClick={()=>speak(item.card.de,false)} style={{fontSize:11,background:"#A29BFE15",border:"1px solid #A29BFE30",color:"#A29BFE",padding:"5px 12px",borderRadius:20,cursor:"pointer",fontWeight:700}}>🐇 Normal</button>
+              <button onClick={()=>speak(item.card.de,true)} style={{fontSize:11,background:"#A29BFE15",border:"1px solid #A29BFE30",color:"#A29BFE",padding:"5px 12px",borderRadius:20,cursor:"pointer",fontWeight:700}}>🐢 Slow</button>
+            </div>
+          </div>
+          {/* Options */}
+          <div style={{display:"flex",flexDirection:"column",gap:9}}>
+            {item.opts.map((opt,i)=>{
+              const isCorrect=i===item.correctIdx,isSelected=listenSelected===i;
+              let bg="#0d0d1a",border="#1a1a2e",color="#f0f0f0",anim="none";
+              if(listenSelected!==null){
+                if(isCorrect){bg="#A29BFE18";border="#A29BFE";color="#A29BFE";if(isSelected)anim="correctPop 0.4s ease";}
+                else if(isSelected){bg="#FF6B6B15";border="#FF6B6B";color="#FF6B6B";anim="shake 0.35s ease";}
+              }
+              return(
+                <button key={i} onClick={()=>handleListening(i)} style={{background:bg,border:`1.5px solid ${border}`,borderRadius:12,padding:"13px 15px",color,fontSize:14,fontWeight:700,cursor:listenSelected===null?"pointer":"default",textAlign:"left",display:"flex",alignItems:"center",gap:10,animation:anim}}>
+                  <span style={{width:24,height:24,borderRadius:"50%",background:"#ffffff07",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>
+                    {listenSelected!==null?(isCorrect?"✓":isSelected?"✗":["A","B","C","D"][i]):["A","B","C","D"][i]}
+                  </span>
+                  <div style={{flex:1}}>
+                    <div>{opt.de}</div>
+                    {listenSelected!==null&&<div style={{fontSize:11,color:"#555",marginTop:2}}>{opt.en}</div>}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* ══════════════════ LESSON COMPLETE ══════════════════ */}
+    {screen==="complete"&&activeLesson&&(
+      <div style={{paddingTop:28,textAlign:"center",animation:"popIn 0.4s ease"}}>
+        <div style={{fontSize:64}}>{quizScore===activeLesson.quiz.length?"🏆":"⭐"}</div>
+        <div style={{fontSize:24,fontWeight:900,marginTop:10}}>Lesson Complete!</div>
+        <div style={{color:"#555",marginTop:4}}>{quizScore}/{activeLesson.quiz.length} correct</div>
+        <div style={{color:"#FFD700",fontWeight:800,marginTop:4}}>+{GEMS_PER_LESSON+(quizScore===activeLesson.quiz.length?GEMS_PERFECT:0)} 💎</div>
+        {char&&<div style={{margin:"18px 0",animation:"float 3s ease-in-out infinite",display:"inline-block"}}><CharacterSVG gender={char.gender} equipped={char.equipped} size={110}/></div>}
+        <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:14,padding:"12px",marginBottom:16,display:"flex",gap:12,justifyContent:"center"}}>
+          <div style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:"#4ECDC4"}}>{Object.keys(state.srs||{}).length}</div><div style={{fontSize:10,color:"#444"}}>cards tracked</div></div>
+          <div style={{width:1,background:"#1a1a2e"}}/>
+          <div style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:"#FFD700"}}>{dueCount}</div><div style={{fontSize:10,color:"#444"}}>due for review</div></div>
+          <div style={{width:1,background:"#1a1a2e"}}/>
+          <div style={{textAlign:"center"}}><div style={{fontSize:18,fontWeight:900,color:"#FF6B35"}}>{state.streak}</div><div style={{fontSize:10,color:"#444"}}>day streak</div></div>
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={()=>{setTab("practice");setScreen("home");}} style={{background:"linear-gradient(135deg,#FFD700,#FF8C00)",border:"none",color:"#000",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:14,fontWeight:900}}>🔁 SRS Review Now</button>
+          <button onClick={()=>startListening(activeLesson,activeWeek)} style={{background:"#A29BFE18",border:"1px solid #A29BFE30",color:"#A29BFE",padding:"12px",borderRadius:13,cursor:"pointer",fontSize:13,fontWeight:700}}>🎧 Listening Quiz</button>
+          <button onClick={()=>setScreen("home")} style={{background:"#0d0d1a",border:"1px solid #1a1a2e",color:"#888",padding:"11px",borderRadius:13,cursor:"pointer",fontSize:13}}>Back to Lessons</button>
+        </div>
+      </div>
+    )}
+
+    {/* ══════════════════ SRS COMPLETE ══════════════════ */}
+    {screen==="srscomplete"&&(
+      <div style={{paddingTop:36,textAlign:"center",animation:"popIn 0.4s ease"}}>
+        <div style={{fontSize:64}}>🔁</div>
+        <div style={{fontSize:24,fontWeight:900,marginTop:10}}>SRS Session Done!</div>
+        <div style={{color:"#555",marginTop:4}}>Reviewed {cardQueue.length} card{cardQueue.length!==1?"s":""}</div>
+        <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:14,padding:"14px",margin:"20px 0",fontSize:13,color:"#888",lineHeight:1.7}}>
+          The spaced repetition algorithm has updated all your card intervals. Cards you struggled with will appear sooner; cards you knew will be spaced out further.
+        </div>
+        {char&&<div style={{animation:"float 3s ease-in-out infinite",display:"inline-block",marginBottom:16}}><CharacterSVG gender={char.gender} equipped={char.equipped} size={100}/></div>}
+        <button onClick={()=>setScreen("home")} style={{width:"100%",background:"linear-gradient(135deg,#FFD700,#FF8C00)",border:"none",color:"#000",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:15,fontWeight:900}}>Back to Home</button>
+      </div>
+    )}
+
+    {/* ══════════════════ LISTEN COMPLETE ══════════════════ */}
+    {screen==="listencomplete"&&(
+      <div style={{paddingTop:36,textAlign:"center",animation:"popIn 0.4s ease"}}>
+        <div style={{fontSize:64}}>{listenScore>=listenItems.length*0.8?"🎧":"👂"}</div>
+        <div style={{fontSize:24,fontWeight:900,marginTop:10}}>Listening Done!</div>
+        <div style={{color:"#555",marginTop:4}}>{listenScore}/{listenItems.length} correct · {Math.round((listenScore/listenItems.length)*100)}%</div>
+        {listenScore>=listenItems.length*0.7&&<div style={{color:"#FFD700",fontWeight:800,marginTop:4}}>+10 💎 listening bonus!</div>}
+        <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:14,padding:"14px",margin:"18px 0",fontSize:13,color:"#888",lineHeight:1.7}}>
+          {listenScore===listenItems.length?"Perfect score! Your listening ear is sharp 👂":"Keep practising — listening is the hardest skill and improves with repetition."}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:10}}>
+          <button onClick={()=>startListening(activeLesson,activeWeek)} style={{background:"#A29BFE",border:"none",color:"#000",padding:"14px",borderRadius:13,cursor:"pointer",fontSize:14,fontWeight:900}}>Try Again 🔄</button>
+          <button onClick={()=>setScreen("home")} style={{background:"#0d0d1a",border:"1px solid #1a1a2e",color:"#888",padding:"11px",borderRadius:13,cursor:"pointer",fontSize:13}}>Back to Home</button>
+        </div>
+      </div>
+    )}
+
+    {/* ══════════════════ WEEK TEST ══════════════════ */}
+    {screen==="weektest"&&activeWeek&&(
+      <div style={{paddingTop:10,animation:"popIn 0.3s ease"}}>
+        <div style={{background:"#0d0d1a",border:`1.5px solid ${timerColor}25`,borderRadius:14,padding:"11px 15px",marginBottom:12,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div><div style={{fontWeight:900,fontSize:15}}>⚡ {activeWeek.title} Test</div><div style={{fontSize:11,color:"#555",marginTop:1}}>70% to pass · {activeWeek.testQuestions.length} questions</div></div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:26,fontWeight:900,color:timerColor,fontFamily:"monospace",animation:timeLeft<=15?"pulse 0.5s infinite":"none"}}>{Math.floor(timeLeft/60)}:{(timeLeft%60).toString().padStart(2,"0")}</div>
+            <div style={{height:3,width:60,background:"#ffffff0d",borderRadius:99,overflow:"hidden",marginTop:3}}>
+              <div style={{height:"100%",width:`${timerPct*100}%`,background:timerColor,borderRadius:99,transition:"all 1s linear"}}/>
+            </div>
+          </div>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+          <div style={{flex:1,height:4,background:"#ffffff0d",borderRadius:99,overflow:"hidden"}}>
+            <div style={{height:"100%",width:`${(quizIndex/activeWeek.testQuestions.length)*100}%`,background:activeWeek.color,borderRadius:99,transition:"width 0.3s"}}/>
+          </div>
+          <span style={{fontSize:10,color:"#444"}}>{quizIndex+1}/{activeWeek.testQuestions.length}</span>
+        </div>
+        <div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:18,padding:"20px 16px",marginBottom:12,fontSize:15,fontWeight:800,lineHeight:1.5}}>
+          {activeWeek.testQuestions[quizIndex].q}
+        </div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {activeWeek.testQuestions[quizIndex].options.map((opt,i)=>{
+            const isCorrect=i===activeWeek.testQuestions[quizIndex].answer,isSelected=selected===i;
+            let bg="#0d0d1a",border="#1a1a2e",color="#f0f0f0",anim="none";
+            if(selected!==null){
+              if(isCorrect){bg="#4ECDC415";border="#4ECDC4";color="#4ECDC4";}
+              else if(isSelected){bg="#FF6B6B15";border="#FF6B6B";color="#FF6B6B";anim="shake 0.4s ease";}
+            }
+            return(<button key={i} onClick={()=>handleWeekTest(i)} style={{background:bg,border:`1.5px solid ${border}`,borderRadius:12,padding:"13px 15px",color,fontSize:14,fontWeight:600,cursor:selected===null?"pointer":"default",textAlign:"left",display:"flex",alignItems:"center",gap:10,animation:anim}}>
+              <span style={{width:24,height:24,borderRadius:"50%",background:"#ffffff07",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,flexShrink:0}}>{selected!==null?(isCorrect?"✓":isSelected?"✗":["A","B","C","D"][i]):["A","B","C","D"][i]}</span>
+              <span style={{flex:1}}>{opt}</span>
+              {opt.match(/[äöüÄÖÜß]/)&&<span onClick={e=>{e.stopPropagation();speak(opt);}} style={{fontSize:12,opacity:0.3,cursor:"pointer"}}>🔊</span>}
+            </button>);
+          })}
+        </div>
+      </div>
+    )}
+
+    {/* ══════════════════ TEST RESULT ══════════════════ */}
+    {screen==="testresult"&&activeWeek&&(()=>{
+      const passed=(quizScore/activeWeek.testQuestions.length)>=0.7;
+      const timed=state.weekTestResults[activeWeek.id]?.timedOut;
+      return(
+        <div style={{paddingTop:28,textAlign:"center",animation:"popIn 0.4s ease"}}>
+          <div style={{fontSize:64}}>{timed?"⏰":passed?"🎉":"😬"}</div>
+          <div style={{fontSize:24,fontWeight:900,marginTop:10,color:passed?"#4ECDC4":"#FF6B6B"}}>{timed?"Time's Up!":passed?"Test Passed!":"Test Failed"}</div>
+          <div style={{color:"#555",marginTop:4}}>{quizScore}/{activeWeek.testQuestions.length} · {Math.round((quizScore/activeWeek.testQuestions.length)*100)}%</div>
+          <div style={{background:passed?"#4ECDC412":"#FF6B6B12",border:`1px solid ${passed?"#4ECDC425":"#FF6B6B25"}`,borderRadius:14,padding:"13px 22px",display:"inline-block",margin:"16px 0"}}>
+            <div style={{fontSize:26,fontWeight:900,color:passed?"#4ECDC4":"#FF6B6B"}}>{passed?`+${GEMS_TEST_PASS}`:GEMS_TEST_FAIL} 💎</div>
+          </div>
+          {!passed&&<div style={{background:"#0d0d1a",border:"1px solid #1a1a2e",borderRadius:13,padding:"12px",marginBottom:16,fontSize:13,color:"#888"}}>Review your mistakes in the Practice tab, then try again.</div>}
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {!passed&&<button onClick={()=>{setTab("practice");setScreen("home");}} style={{background:"#FF6B6B18",border:"1px solid #FF6B6B30",color:"#FF6B6B",padding:"13px",borderRadius:13,cursor:"pointer",fontWeight:900,fontSize:13}}>📊 Review Mistakes</button>}
+            <button onClick={()=>setScreen("home")} style={{background:passed?"linear-gradient(135deg,#FFD700,#FF8C00)":"#0d0d1a",border:passed?"none":"1px solid #1a1a2e",color:passed?"#000":"#888",padding:"13px",borderRadius:13,cursor:"pointer",fontWeight:900,fontSize:14}}>Back to Home</button>
+          </div>
+        </div>
+      );
+    })()}
+
+  </div>
+</div>
+```
+
+);
+}
